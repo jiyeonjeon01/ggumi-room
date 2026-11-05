@@ -4,8 +4,6 @@ import { charCount, clampChars, MAX_CHAT_LENGTH } from '../game/chat/chat';
 interface Props {
   /** Sends the text; returns false when it was empty (the bar then stays open). */
   onSend: (text: string) => boolean;
-  /** True while the input has focus, so the game can pause keyboard movement. */
-  onTypingChange: (typing: boolean) => void;
 }
 
 /**
@@ -14,7 +12,7 @@ interface Props {
  * cancels. Enter pressed while composing Hangul (IME) only finishes the
  * syllable. Nothing is stored: the text lives in this component's state.
  */
-export function ChatBar({ onSend, onTypingChange }: Props) {
+export function ChatBar({ onSend }: Props) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -91,8 +89,6 @@ export function ChatBar({ onSend, onTypingChange }: Props) {
             setText(clampChars(e.currentTarget.value));
           }}
           onKeyDown={onKeyDown}
-          onFocus={() => onTypingChange(true)}
-          onBlur={() => onTypingChange(false)}
           className="min-w-0 flex-1 bg-transparent text-sm text-plum-700 outline-none placeholder:text-plum-500/70"
         />
         {open && (

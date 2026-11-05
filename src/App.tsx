@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { api, ApiError, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
 import { navigate, useRoute } from './app/router';
+import { FriendsProvider, useFriends } from './app/friends';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameView } from './components/GameView';
+import { MyPanel } from './components/MyPanel';
+import { RoomLayout } from './components/RoomLayout';
 import { Button, Card, ToastProvider, useToast } from './components/ui';
 import { THEME_IDS, THEMES, type ThemeId } from './game/art/themes';
 import { isWebGLAvailable } from './game/createGame';
@@ -194,12 +197,24 @@ function useRoomInfo(path: string) {
 
 function MyRoomScreen() {
   const { info, setInfo, error } = useRoomInfo('/api/rooms/me');
-  return info ? <ServerRoomScreen info={info} onInfo={setInfo} /> : <RoomLoadState error={error} />;
+  return info ? (
+    <FriendsProvider>
+      <ServerRoomScreen info={info} onInfo={setInfo} />
+    </FriendsProvider>
+  ) : (
+    <RoomLoadState error={error} />
+  );
 }
 
 function VisitRoomScreen({ id }: { id: string }) {
   const { info, setInfo, error } = useRoomInfo(`/api/rooms/${id}`);
-  return info ? <ServerRoomScreen info={info} onInfo={setInfo} /> : <RoomLoadState error={error} />;
+  return info ? (
+    <FriendsProvider>
+      <ServerRoomScreen info={info} onInfo={setInfo} />
+    </FriendsProvider>
+  ) : (
+    <RoomLoadState error={error} />
+  );
 }
 
 function RoomLoadState({ error }: { error: string | null }) {
@@ -221,7 +236,7 @@ function RoomLoadState({ error }: { error: string | null }) {
 function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomInfo) => void }) {
   const { me } = useAuth();
   const toast = useToast();
-  const [friendsOpen, setFriendsOpen] = useState(false);
+  const { incomingCount } = useFriends();
   const isOwner = info.access === 'owner';
   const nickname = me?.nickname ?? DEMO_ROOM.owner;
 
@@ -265,30 +280,18 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
 
   const where = info.access === 'friend' ? '친구의 방' : info.access === 'guest' ? '초대받은 방' : '내 방';
   return (
-    <>
-      <RoomScreen
-        room={room}
-        theme={info.theme}
-        onTheme={isOwner ? saveTheme : undefined}
-        title={info.name}
-        subtitle={`${THEMES[info.theme].label} · ${where}`}
-        actions={
-          <>
-            <Button variant="soft" className="px-3 py-1.5" onClick={() => setFriendsOpen(true)}>
-              👥 친구
-            </Button>
-            {isOwner ? (
-              <Button className="px-3 py-1.5" onClick={invite}>
-                💌 친구 초대하기
-              </Button>
-            ) : (
-              <Button variant="soft" className="px-3 py-1.5" onClick={() => navigate('/')}>
-                🏠 내 방으로
-              </Button>
-            )}
-          </>
-        }
-        banner={
+    <RoomScreen
+      room={room}
+      theme={info.theme}
+      title={info.name}
+      subtitle={`${THEMES[info.theme].label} · ${where}`}
+      panels={{
+        badge: incomingCount,
+        my: (close) =>
+          me && <MyPanel me={me} room={info} onTheme={saveTheme} onInvite={() => (close?.(), void invite())} onNavigate={close} />,
+        friends: (close) => <FriendsPanel onNavigate={close} />,
+      }}
+      banner={
           isOwner ? undefined : (
             <>
               <b className="font-normal text-blush-500">{info.owner_nickname}</b>님의 방을 혼자 둘러보는 중이에요. 함께
@@ -296,9 +299,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
             </>
           )
         }
-      />
-      {friendsOpen && <FriendsPanel onClose={() => setFriendsOpen(false)} />}
-    </>
+    />
   );
 }
 
@@ -308,8 +309,8 @@ function RoomScreen({
   onTheme,
   title,
   subtitle,
-  actions,
   banner,
+  panels,
 }: {
   room: RoomData;
   theme: ThemeId;
@@ -317,8 +318,13 @@ function RoomScreen({
   onTheme?: (t: ThemeId) => void;
   title?: string;
   subtitle: string;
-  actions?: ReactNode;
   banner?: ReactNode;
+  /** Logged-in rooms: side panels / rail / tabs around the game (see RoomLayout). */
+  panels?: {
+    badge: number;
+    my: (close?: () => void) => ReactNode;
+    friends: (close?: () => void) => ReactNode;
+  };
 }) {
   const [timeMode, setTimeMode] = useState<TimeMode>('auto');
   const [period, setPeriod] = useState<Period | null>(null);
@@ -342,51 +348,66 @@ function RoomScreen({
     </nav>
   );
 
+  const stage = (
+    <section
+      className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
+      style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
+    >
+      <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} />
+
+      <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
+        <span aria-hidden>{THEME_EMOJI[theme]}</span>
+        <div className="leading-tight">
+          <p className="text-sm tracking-wide text-plum-700">{title ?? room.name}</p>
+          <p className="text-[11px] text-plum-500">{subtitle}</p>
+        </div>
+        {period && (
+          <span data-testid="period-badge" className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] text-plum-700">
+            <span aria-hidden className="mr-0.5">{PERIOD_EMOJI[period]}</span>
+            {PERIOD_LABEL[period]}
+          </span>
+        )}
+      </div>
+
+      {banner && (
+        <p className="pointer-events-none absolute inset-x-4 top-20 mx-auto max-w-md rounded-2xl bg-white/90 px-4 py-2 text-center text-xs leading-relaxed text-plum-700 shadow-sm ring-1 ring-blush-200 sm:top-auto sm:bottom-16 sm:text-sm">
+          {banner}
+        </p>
+      )}
+
+      {showDevTools && <TimeDevPanel mode={timeMode} onChange={setTimeMode} />}
+
+      {!webgl && (
+        <p className="absolute bottom-4 left-4 rounded-xl bg-white/90 px-3 py-1.5 text-xs text-plum-500 ring-1 ring-blush-200">
+          WebGL을 쓸 수 없어 Canvas 모드로 실행 중이에요.
+        </p>
+      )}
+    </section>
+  );
+
+  const footer = (
+    <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
+      <Hint keys={['클릭']} label="그 자리로 이동" />
+      <Hint keys={['↑', '↓', '←', '→']} label="또는" />
+      <Hint keys={['W', 'A', 'S', 'D']} label="로 걷기" />
+      <Hint keys={['Enter']} label="채팅" />
+    </footer>
+  );
+
+  if (panels) {
+    // Theme buttons live in the left panel here, not in the header.
+    return (
+      <Layout>
+        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer}>
+          {stage}
+        </RoomLayout>
+      </Layout>
+    );
+  }
   return (
     <Layout nav={nav}>
-      <section
-        className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
-        style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
-      >
-        <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} />
-
-        <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
-          <span aria-hidden>{THEME_EMOJI[theme]}</span>
-          <div className="leading-tight">
-            <p className="text-sm tracking-wide text-plum-700">{title ?? room.name}</p>
-            <p className="text-[11px] text-plum-500">{subtitle}</p>
-          </div>
-          {period && (
-            <span data-testid="period-badge" className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] text-plum-700">
-              <span aria-hidden className="mr-0.5">{PERIOD_EMOJI[period]}</span>
-              {PERIOD_LABEL[period]}
-            </span>
-          )}
-        </div>
-
-        {actions && <div className="absolute right-4 top-4 flex flex-wrap justify-end gap-2">{actions}</div>}
-
-        {banner && (
-          <p className="pointer-events-none absolute inset-x-4 top-20 mx-auto max-w-md rounded-2xl bg-white/90 px-4 py-2 text-center text-xs leading-relaxed text-plum-700 shadow-sm ring-1 ring-blush-200 sm:top-auto sm:bottom-16 sm:text-sm">
-            {banner}
-          </p>
-        )}
-
-        {showDevTools && <TimeDevPanel mode={timeMode} onChange={setTimeMode} />}
-
-        {!webgl && (
-          <p className="absolute bottom-4 left-4 rounded-xl bg-white/90 px-3 py-1.5 text-xs text-plum-500 ring-1 ring-blush-200">
-            WebGL을 쓸 수 없어 Canvas 모드로 실행 중이에요.
-          </p>
-        )}
-      </section>
-
-      <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
-        <Hint keys={['클릭']} label="그 자리로 이동" />
-        <Hint keys={['↑', '↓', '←', '→']} label="또는" />
-        <Hint keys={['W', 'A', 'S', 'D']} label="로 걷기" />
-        <Hint keys={['Enter']} label="채팅" />
-      </footer>
+      {stage}
+      {footer}
     </Layout>
   );
 }

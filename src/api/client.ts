@@ -45,10 +45,11 @@ function toDetail(status: number, body: unknown): ApiErrorDetail {
   return { message: '요청을 처리하지 못했어요.' };
 }
 
-export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, retried = false): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
-  if (method !== 'GET') headers['X-CSRF-Token'] = await csrfToken();
+  const sentToken = method !== 'GET' ? await csrfToken() : null;
+  if (sentToken) headers['X-CSRF-Token'] = sentToken;
   let res: Response;
   try {
     res = await fetch(path, {
@@ -66,6 +67,11 @@ export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: 
     parsed = text ? JSON.parse(text) : null;
   } catch {
     parsed = null;
+  }
+  // On the very first load, two requests can each be issued a CSRF cookie and
+  // the later one wins; if ours was replaced meanwhile, retry once with it.
+  if (res.status === 403 && sentToken && !retried && readCookie(CSRF_COOKIE) !== sentToken) {
+    return api<T>(method, path, body, true);
   }
   if (!res.ok) throw new ApiError(res.status, toDetail(res.status, parsed));
   return parsed as T;

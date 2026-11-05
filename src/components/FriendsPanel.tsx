@@ -1,37 +1,25 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { api, ApiError, type Friend, type FriendRequestItem, type SearchResult } from '../api/client';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { api, ApiError, type SearchResult } from '../api/client';
+import { useFriends } from '../app/friends';
 import { navigate } from '../app/router';
 import { joinedLabel } from '../app/rules';
-import { Button, Modal, useToast } from './ui';
+import { Button, useToast } from './ui';
 
 type Tab = 'friends' | 'requests' | 'search';
 
-/** Friend list, requests, and nickname search in one modal. */
-export function FriendsPanel({ onClose }: { onClose: () => void }) {
+/**
+ * Friend list, requests, and nickname search. Plain content: the room layout
+ * places it in a sidebar, slide-over or bottom sheet. Data comes from
+ * FriendsProvider so every view and the request badges stay in sync.
+ * `onNavigate` lets a sheet close itself when the user leaves to a room.
+ */
+export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const toast = useToast();
+  const { friends, requests, incomingCount, run } = useFriends();
   const [tab, setTab] = useState<Tab>('friends');
-  const [friends, setFriends] = useState<Friend[] | null>(null);
-  const [requests, setRequests] = useState<{ incoming: FriendRequestItem[]; outgoing: FriendRequestItem[] } | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [f, r] = await Promise.all([
-        api<Friend[]>('GET', '/api/friends'),
-        api<{ incoming: FriendRequestItem[]; outgoing: FriendRequestItem[] }>('GET', '/api/friends/requests'),
-      ]);
-      setFriends(f);
-      setRequests(r);
-    } catch (e) {
-      toast(e instanceof ApiError ? e.detail.message : '친구 정보를 불러오지 못했어요.');
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const runSearch = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -47,21 +35,14 @@ export function FriendsPanel({ onClose }: { onClose: () => void }) {
   /** Runs an action, then refreshes lists (and search results if shown). */
   const act = async (key: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(key);
-    try {
-      await fn();
-      toast(done);
-    } catch (e) {
-      toast(e instanceof ApiError ? e.detail.message : '처리하지 못했어요.');
-    }
-    await load();
+    const error = await run(fn);
+    toast(error ?? done);
     if (results) await runSearch();
     setBusy(null);
   };
 
-  const incomingCount = requests?.incoming.length ?? 0;
-
   return (
-    <Modal title="친구" onClose={onClose}>
+    <div>
       <div role="tablist" className="mb-3 flex gap-1 rounded-full bg-white/70 p-1 ring-1 ring-blush-200">
         {(
           [
@@ -89,7 +70,7 @@ export function FriendsPanel({ onClose }: { onClose: () => void }) {
           {friends?.map((f) => (
             <Row key={f.id} nickname={f.nickname} sub={joinedLabel(f.joined_at)}>
               {f.room_id && (
-                <Button className="px-3 py-1" onClick={() => (onClose(), navigate(`/room/${f.room_id}`))}>
+                <Button className="px-3 py-1" onClick={() => (onNavigate?.(), navigate(`/room/${f.room_id}`))}>
                   놀러 가기
                 </Button>
               )}
@@ -177,7 +158,7 @@ export function FriendsPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-3 text-xs text-plum-500/80">같은 닉네임이 여럿이면 가입 시기로 구분해 보세요.</p>
         </div>
       )}
-    </Modal>
+    </div>
   );
 }
 

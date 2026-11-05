@@ -6,6 +6,14 @@ import type { Period } from '../game/environment/timeOfDay';
 import type { RoomData } from '../game/room/roomData';
 import { ChatBar } from './ChatBar';
 
+/** True for elements that take typed text (where WASD/arrows must not move the character). */
+function isTextEntry(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true;
+  if (el instanceof HTMLInputElement) return !['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'color', 'file'].includes(el.type);
+  return el instanceof HTMLElement && el.isContentEditable;
+}
+
 interface Props {
   room: RoomData;
   theme: ThemeId;
@@ -35,7 +43,27 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
       onPeriodChange: (p) => periodCallbackRef.current?.(p),
     });
     handleRef.current = handle;
+
+    // Any text field on the page (chat, friend search, forms) pauses game
+    // keys, so typing never walks the character. focusout is read on the next
+    // tick, once focus has settled on its new element.
+    const sync = () => handle.setKeyboardEnabled(!isTextEntry(document.activeElement));
+    const onFocusOut = () => window.setTimeout(sync, 0);
+    // Phaser cancels the canvas's default pointer behavior, so clicking the
+    // room wouldn't move focus off a text field and WASD would keep typing
+    // there. Clicking the game hands the keyboard back to the game.
+    const onPointerDown = () => {
+      const active = document.activeElement;
+      if (isTextEntry(active) && active instanceof HTMLElement) active.blur();
+    };
+    document.addEventListener('focusin', sync);
+    document.addEventListener('focusout', onFocusOut);
+    el.addEventListener('pointerdown', onPointerDown, true);
+    sync();
     return () => {
+      document.removeEventListener('focusin', sync);
+      document.removeEventListener('focusout', onFocusOut);
+      el.removeEventListener('pointerdown', onPointerDown, true);
       handle.destroy();
       handleRef.current = null;
     };
@@ -56,10 +84,7 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
-      <ChatBar
-        onSend={(text) => handleRef.current?.sendChat(text) ?? false}
-        onTypingChange={(typing) => handleRef.current?.setKeyboardEnabled(!typing)}
-      />
+      <ChatBar onSend={(text) => handleRef.current?.sendChat(text) ?? false} />
     </>
   );
 }
