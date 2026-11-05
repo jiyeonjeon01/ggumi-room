@@ -2,3 +2,8 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# Secrets (Cloudflare Tunnel token, later DB passwords)
+.env
+.env.*
+!.env.example

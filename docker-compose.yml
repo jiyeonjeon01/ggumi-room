@@ -1,0 +1,80 @@
+# Ggumiroom production stack.
+#
+#   docker compose up -d --build                    # web only (local check: http://127.0.0.1:8080)
+#   docker compose --profile tunnel up -d --build   # web + Cloudflare Tunnel (needs .env)
+#
+# Nothing is exposed to the LAN or the internet directly: web is bound to
+# 127.0.0.1 for local checks only, and public traffic arrives through
+# cloudflared's outbound tunnel over the internal `edge` network.
+
+name: ggumiroom
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  web:
+    build: .
+    image: ggumiroom-web:latest
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs:
+      - /tmp # nginx pid and temp files (the image runs nginx as a non-root user)
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    networks: [edge]
+    logging: *logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    profiles: [tunnel]
+    restart: unless-stopped
+    <<: *hardening
+    command: tunnel --no-autoupdate run
+    environment:
+      # From .env. Not marked required here because compose would then refuse
+      # to run even the web-only stack; cloudflared exits if it's empty.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [edge]
+    logging: *logging
+
+  # ---- Later (not used yet) ----
+  # api:
+  #   build: ./api
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   depends_on: { db: { condition: service_healthy } }
+  #   networks: [edge, backend]
+  #   logging: *logging
+  #
+  # db:
+  #   image: postgres:18-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #   volumes: [db-data:/var/lib/postgresql]
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+  #   networks: [backend] # no ports: reachable only from api
+  #   logging: *logging
+
+networks:
+  edge: {}
+  # backend:
+  #   internal: true # no outside access at all
+
+# volumes:
+#   db-data: {}

@@ -24,9 +24,18 @@ Node 24 / pnpm 12에서 확인했습니다.
 | ↑ ↓ ← → / W A S D | 화면 기준 방향으로 걷기. 두 키 조합(예: ↑+→)은 벽과 평행하게 이동 |
 | 상단 테마 버튼 | 파스텔 / 갤럭시 / 플랜트 테마 전환 (캐릭터 위치·시간대 유지) |
 | Enter | 채팅 입력창 열기 → 입력 후 Enter로 전송, Esc로 취소 (최대 24자, 말풍선 5초) |
-| `dev · 시간대` 패널 (우하단) | 자동(KST) / 새벽 / 낮 / 노을 / 밤 강제 전환. **개발 모드 또는 `?debug` 주소에서만 표시** |
+| `dev · 시간대` 패널 (우하단) | 자동(KST) / 새벽 / 낮 / 노을 / 밤 강제 전환. **개발 모드(`pnpm dev`)에서만 표시, 운영 빌드에는 없음** |
 
 키 입력은 진행 중인 클릭 이동을 즉시 취소합니다.
+
+## 배포
+
+집 PC의 Docker(nginx 정적 서빙) + Cloudflare Tunnel로 `https://ggumiroom.com`에 공개합니다. 실행 명령, Cloudflare·후이즈 설정, API/DB 추가, OCI/AWS 이전 방법은 [docs/DEPLOY.md](docs/DEPLOY.md)를 보세요.
+
+```bash
+docker compose up -d --build                    # 웹만 (http://127.0.0.1:8080)
+docker compose --profile tunnel up -d --build   # 웹 + 터널 (.env 필요)
+```
 
 ## 기술 스택
 

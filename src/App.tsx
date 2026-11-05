@@ -10,8 +10,8 @@ const THEME_EMOJI: Record<ThemeId, string> = { pastel: '🎀', galaxy: '🪐', p
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 const PERIOD_EMOJI: Record<Period, string> = { dawn: '🌅', day: '☀️', sunset: '🌇', night: '🌙' };
 const webgl = isWebGLAvailable();
-/** Developer tools are shown in dev builds, or in production with ?debug. */
-const showDevTools = import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug');
+/** Developer tools only exist in dev builds; production (the public site) never shows them. */
+const showDevTools = import.meta.env.DEV;
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeId>(DEMO_ROOM.theme);
