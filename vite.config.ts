@@ -7,7 +7,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   // Port plan: dev 9020 / Docker host 9021 (frontend), dev 9200 / Docker host 9201 (FastAPI, later).
   // strictPort: fail loudly instead of silently moving to another port.
-  server: { port: 9020, strictPort: true },
+  server: {
+    port: 9020,
+    strictPort: true,
+    // Same-origin /api in development too, so cookies and CSRF behave like production.
+    proxy: { '/api': 'http://localhost:9200' },
+  },
   build: {
     // Phaser is large (~1MB min); keep it in its own cacheable chunk.
     chunkSizeWarningLimit: 1600,

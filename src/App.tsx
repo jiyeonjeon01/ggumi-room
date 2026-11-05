@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { api, ApiError, type RoomInfo } from './api/client';
+import { AuthProvider, useAuth } from './app/auth';
+import { navigate, useRoute } from './app/router';
+import { FriendsPanel } from './components/FriendsPanel';
 import { GameView } from './components/GameView';
+import { Button, Card, ToastProvider, useToast } from './components/ui';
 import { THEME_IDS, THEMES, type ThemeId } from './game/art/themes';
 import { isWebGLAvailable } from './game/createGame';
 import type { TimeMode } from './game/environment/TimeOfDayClock';
 import { PERIOD_LABEL, PERIODS, type Period } from './game/environment/timeOfDay';
-import { DEMO_ROOM } from './game/room/roomData';
+import { DEMO_ROOM, type RoomData } from './game/room/roomData';
+import { finishAuth, LoginPage, SignupPage } from './pages/AuthPage';
+import { InvitePage } from './pages/InvitePage';
 
 const THEME_EMOJI: Record<ThemeId, string> = { pastel: '🎀', galaxy: '🪐', plant: '🌿' };
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -14,15 +21,65 @@ const webgl = isWebGLAvailable();
 const showDevTools = import.meta.env.DEV;
 
 export default function App() {
-  const [theme, setTheme] = useState<ThemeId>(DEMO_ROOM.theme);
-  const [timeMode, setTimeMode] = useState<TimeMode>('auto');
-  const [period, setPeriod] = useState<Period | null>(null);
-  const room = DEMO_ROOM;
-
   return (
-    <div className="flex h-full flex-col bg-gradient-to-b from-blush-50 via-cream to-lavender-100">
+    <AuthProvider>
+      <ToastProvider>
+        <Pages />
+      </ToastProvider>
+    </AuthProvider>
+  );
+}
+
+function Pages() {
+  const route = useRoute();
+  const { state } = useAuth();
+
+  // Pages that need a session send guests to log in and come back afterwards.
+  useEffect(() => {
+    if (route.name === 'room' && state.status === 'guest') {
+      navigate(`/login?next=${encodeURIComponent(`/room/${route.id}`)}`, { replace: true });
+    }
+    if ((route.name === 'login' || route.name === 'signup') && state.status === 'user') {
+      void finishAuth(route.next);
+    }
+  }, [route, state.status]);
+
+  switch (route.name) {
+    case 'home':
+      if (state.status === 'user') return <MyRoomScreen />;
+      return state.status === 'guest' ? <DemoScreen /> : <Loading />;
+    case 'room':
+      return state.status === 'user' ? <VisitRoomScreen id={route.id} /> : <Loading />;
+    case 'invite':
+      return (
+        <Layout>
+          <InvitePage token={route.token} />
+        </Layout>
+      );
+    case 'login':
+      return (
+        <Layout>
+          <LoginPage next={route.next} />
+        </Layout>
+      );
+    case 'signup':
+      return (
+        <Layout>
+          <SignupPage next={route.next} />
+        </Layout>
+      );
+    default:
+      return <NotFound />;
+  }
+}
+
+// ---------------------------------------------------------------- layout
+
+function Layout({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
+  return (
+    <div className="flex h-full flex-col overflow-y-auto bg-gradient-to-b from-blush-50 via-cream to-lavender-100">
       <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8 sm:pt-6">
-        <div className="flex items-center gap-3">
+        <a href="/" onClick={(e) => (e.preventDefault(), navigate('/'))} className="flex items-center gap-3">
           <Logo />
           <div>
             <h1 className="text-2xl tracking-wide text-plum-700 sm:text-3xl">
@@ -30,67 +87,307 @@ export default function App() {
             </h1>
             <p className="text-xs text-plum-500 sm:text-sm">나만의 작은 픽셀 방에 놀러 오세요</p>
           </div>
+        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          {nav}
+          <AccountMenu />
+        </div>
+      </header>
+      <main className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:px-8 sm:pb-6">{children}</main>
+    </div>
+  );
+}
+
+function AccountMenu() {
+  const { state, logout } = useAuth();
+  const toast = useToast();
+  if (state.status === 'loading') return null;
+  if (state.status === 'guest') {
+    if (state.apiDown) return <span className="text-xs text-plum-500">로그인 서버 점검 중</span>;
+    return (
+      <div className="flex gap-1">
+        <Button variant="soft" className="px-3 py-1.5" onClick={() => navigate('/login')}>
+          로그인
+        </Button>
+        <Button className="px-3 py-1.5" onClick={() => navigate('/signup')}>
+          회원가입
+        </Button>
+      </div>
+    );
+  }
+  const onLogout = async () => {
+    try {
+      await logout();
+      navigate('/', { replace: true });
+    } catch {
+      toast('로그아웃하지 못했어요.');
+    }
+  };
+  return (
+    <div className="flex items-center gap-1 rounded-full bg-white/70 py-1 pl-3 pr-1 shadow-sm ring-1 ring-blush-200">
+      <span className="text-sm text-plum-700">{state.me.nickname}님</span>
+      <Button variant="ghost" className="px-3 py-1" onClick={onLogout}>
+        로그아웃
+      </Button>
+    </div>
+  );
+}
+
+function Loading() {
+  return (
+    <Layout>
+      <p className="py-16 text-center text-plum-500">방을 불러오는 중…</p>
+    </Layout>
+  );
+}
+
+function NotFound() {
+  return (
+    <Layout>
+      <div className="mx-auto w-full max-w-sm py-6">
+        <Card className="text-center">
+          <h2 className="mb-2 text-xl text-plum-700">길을 잃었어요</h2>
+          <p className="mb-5 text-sm text-plum-500">찾는 페이지가 없어요.</p>
+          <Button onClick={() => navigate('/')}>꾸미룸으로</Button>
+        </Card>
+      </div>
+    </Layout>
+  );
+}
+
+// ---------------------------------------------------------------- rooms
+
+/** Not logged in: the original demo room, as before (theme changes stay local). */
+function DemoScreen() {
+  const [theme, setTheme] = useState<ThemeId>(DEMO_ROOM.theme);
+  return (
+    <RoomScreen
+      room={DEMO_ROOM}
+      theme={theme}
+      onTheme={setTheme}
+      subtitle={`${THEMES[theme].label} · 둘러보기`}
+      banner={
+        <>
+          둘러보기 중이에요. <b className="font-normal text-blush-500">가입하면 내 이름표와 내 방</b>이 생겨요.
+        </>
+      }
+    />
+  );
+}
+
+function useRoomInfo(path: string) {
+  const [info, setInfo] = useState<RoomInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setInfo(null);
+    setError(null);
+    api<RoomInfo>('GET', path)
+      .then((r) => !cancelled && setInfo(r))
+      .catch((e) => !cancelled && setError(e instanceof ApiError ? e.detail.message : '방을 불러오지 못했어요.'));
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  return { info, setInfo, error };
+}
+
+function MyRoomScreen() {
+  const { info, setInfo, error } = useRoomInfo('/api/rooms/me');
+  return info ? <ServerRoomScreen info={info} onInfo={setInfo} /> : <RoomLoadState error={error} />;
+}
+
+function VisitRoomScreen({ id }: { id: string }) {
+  const { info, setInfo, error } = useRoomInfo(`/api/rooms/${id}`);
+  return info ? <ServerRoomScreen info={info} onInfo={setInfo} /> : <RoomLoadState error={error} />;
+}
+
+function RoomLoadState({ error }: { error: string | null }) {
+  if (!error) return <Loading />;
+  return (
+    <Layout>
+      <div className="mx-auto w-full max-w-sm py-6">
+        <Card className="text-center">
+          <h2 className="mb-2 text-xl text-plum-700">들어갈 수 없는 방이에요</h2>
+          <p className="mb-5 text-sm text-plum-500">{error} 친구의 방은 친구가 되거나 초대 링크로 들어갈 수 있어요.</p>
+          <Button onClick={() => navigate('/')}>내 방으로</Button>
+        </Card>
+      </div>
+    </Layout>
+  );
+}
+
+/** A saved room: mine (theme editable, invite button) or someone else's (look around alone). */
+function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomInfo) => void }) {
+  const { me } = useAuth();
+  const toast = useToast();
+  const [friendsOpen, setFriendsOpen] = useState(false);
+  const isOwner = info.access === 'owner';
+  const nickname = me?.nickname ?? DEMO_ROOM.owner;
+
+  // The game shows the player (me) in this room: my nickname on the name tag
+  // and the room's saved theme. Rebuilt only when the room or I change; theme
+  // switches go through the game handle without a rebuild.
+  const { id: roomId, name: roomName } = info;
+  const initialTheme = info.theme;
+  const room = useMemo<RoomData>(
+    () => ({ ...DEMO_ROOM, id: roomId, name: roomName, owner: nickname, theme: initialTheme }),
+    [roomId, roomName, nickname],
+  );
+
+  const saveTheme = useCallback(
+    async (theme: ThemeId) => {
+      const prev = info;
+      onInfo({ ...info, theme });
+      try {
+        onInfo(await api<RoomInfo>('PATCH', `/api/rooms/${info.id}`, { theme }));
+      } catch (e) {
+        onInfo(prev);
+        toast(e instanceof ApiError ? e.detail.message : '테마를 저장하지 못했어요.');
+      }
+    },
+    [info, onInfo, toast],
+  );
+
+  const invite = async () => {
+    try {
+      const { url } = await api<{ url: string }>('POST', '/api/rooms/me/invite');
+      try {
+        await navigator.clipboard.writeText(url);
+        toast('초대 링크를 복사했어요! 친구에게 보내 주세요 💌');
+      } catch {
+        window.prompt('자동 복사가 안 돼요. 아래 링크를 직접 복사해 주세요.', url);
+      }
+    } catch (e) {
+      toast(e instanceof ApiError ? e.detail.message : '초대 링크를 만들지 못했어요.');
+    }
+  };
+
+  const where = info.access === 'friend' ? '친구의 방' : info.access === 'guest' ? '초대받은 방' : '내 방';
+  return (
+    <>
+      <RoomScreen
+        room={room}
+        theme={info.theme}
+        onTheme={isOwner ? saveTheme : undefined}
+        title={info.name}
+        subtitle={`${THEMES[info.theme].label} · ${where}`}
+        actions={
+          <>
+            <Button variant="soft" className="px-3 py-1.5" onClick={() => setFriendsOpen(true)}>
+              👥 친구
+            </Button>
+            {isOwner ? (
+              <Button className="px-3 py-1.5" onClick={invite}>
+                💌 친구 초대하기
+              </Button>
+            ) : (
+              <Button variant="soft" className="px-3 py-1.5" onClick={() => navigate('/')}>
+                🏠 내 방으로
+              </Button>
+            )}
+          </>
+        }
+        banner={
+          isOwner ? undefined : (
+            <>
+              <b className="font-normal text-blush-500">{info.owner_nickname}</b>님의 방을 혼자 둘러보는 중이에요. 함께
+              움직이고 대화하는 실시간 기능은 아직 준비 중이에요.
+            </>
+          )
+        }
+      />
+      {friendsOpen && <FriendsPanel onClose={() => setFriendsOpen(false)} />}
+    </>
+  );
+}
+
+function RoomScreen({
+  room,
+  theme,
+  onTheme,
+  title,
+  subtitle,
+  actions,
+  banner,
+}: {
+  room: RoomData;
+  theme: ThemeId;
+  /** Omitted when the viewer can't change this room's theme. */
+  onTheme?: (t: ThemeId) => void;
+  title?: string;
+  subtitle: string;
+  actions?: ReactNode;
+  banner?: ReactNode;
+}) {
+  const [timeMode, setTimeMode] = useState<TimeMode>('auto');
+  const [period, setPeriod] = useState<Period | null>(null);
+
+  const nav = onTheme && (
+    <nav aria-label="방 테마" className="flex gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
+      {THEME_IDS.map((id) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onTheme(id)}
+          aria-pressed={theme === id}
+          className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
+            theme === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'
+          }`}
+        >
+          <span aria-hidden className="mr-1">{THEME_EMOJI[id]}</span>
+          {THEMES[id].label}
+        </button>
+      ))}
+    </nav>
+  );
+
+  return (
+    <Layout nav={nav}>
+      <section
+        className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
+        style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
+      >
+        <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} />
+
+        <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
+          <span aria-hidden>{THEME_EMOJI[theme]}</span>
+          <div className="leading-tight">
+            <p className="text-sm tracking-wide text-plum-700">{title ?? room.name}</p>
+            <p className="text-[11px] text-plum-500">{subtitle}</p>
+          </div>
+          {period && (
+            <span data-testid="period-badge" className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] text-plum-700">
+              <span aria-hidden className="mr-0.5">{PERIOD_EMOJI[period]}</span>
+              {PERIOD_LABEL[period]}
+            </span>
+          )}
         </div>
 
-        <nav aria-label="방 테마" className="flex gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
-          {THEME_IDS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTheme(id)}
-              aria-pressed={theme === id}
-              className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
-                theme === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'
-              }`}
-            >
-              <span aria-hidden className="mr-1">{THEME_EMOJI[id]}</span>
-              {THEMES[id].label}
-            </button>
-          ))}
-        </nav>
-      </header>
+        {actions && <div className="absolute right-4 top-4 flex flex-wrap justify-end gap-2">{actions}</div>}
 
-      <main className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:px-8 sm:pb-6">
-        <section
-          className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
-          style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
-        >
-          <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} />
+        {banner && (
+          <p className="pointer-events-none absolute inset-x-4 top-20 mx-auto max-w-md rounded-2xl bg-white/90 px-4 py-2 text-center text-xs leading-relaxed text-plum-700 shadow-sm ring-1 ring-blush-200 sm:top-auto sm:bottom-16 sm:text-sm">
+            {banner}
+          </p>
+        )}
 
-          <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
-            <span aria-hidden>{THEME_EMOJI[theme]}</span>
-            <div className="leading-tight">
-              <p className="text-sm tracking-wide text-plum-700">{room.name}</p>
-              <p className="text-[11px] text-plum-500">{THEMES[theme].label} · 개인룸</p>
-            </div>
-            {period && (
-              <span
-                data-testid="period-badge"
-                className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] text-plum-700"
-              >
-                <span aria-hidden className="mr-0.5">{PERIOD_EMOJI[period]}</span>
-                {PERIOD_LABEL[period]}
-              </span>
-            )}
-          </div>
+        {showDevTools && <TimeDevPanel mode={timeMode} onChange={setTimeMode} />}
 
-          {showDevTools && <TimeDevPanel mode={timeMode} onChange={setTimeMode} />}
+        {!webgl && (
+          <p className="absolute bottom-4 left-4 rounded-xl bg-white/90 px-3 py-1.5 text-xs text-plum-500 ring-1 ring-blush-200">
+            WebGL을 쓸 수 없어 Canvas 모드로 실행 중이에요.
+          </p>
+        )}
+      </section>
 
-          {!webgl && (
-            <p className="absolute bottom-4 left-4 rounded-xl bg-white/90 px-3 py-1.5 text-xs text-plum-500 ring-1 ring-blush-200">
-              WebGL을 쓸 수 없어 Canvas 모드로 실행 중이에요.
-            </p>
-          )}
-        </section>
-
-        <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
-          <Hint keys={['클릭']} label="그 자리로 이동" />
-          <Hint keys={['↑', '↓', '←', '→']} label="또는" />
-          <Hint keys={['W', 'A', 'S', 'D']} label="로 걷기" />
-          <Hint keys={['Enter']} label="채팅" />
-        </footer>
-      </main>
-    </div>
+      <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
+        <Hint keys={['클릭']} label="그 자리로 이동" />
+        <Hint keys={['↑', '↓', '←', '→']} label="또는" />
+        <Hint keys={['W', 'A', 'S', 'D']} label="로 걷기" />
+        <Hint keys={['Enter']} label="채팅" />
+      </footer>
+    </Layout>
   );
 }
 
