@@ -152,13 +152,72 @@ nslookup -type=NS ggumiroom.com 8.8.8.8
 - Windows 업데이트 자동 재부팅: 설정 → Windows 업데이트 → 고급 옵션 → *사용 시간*을 넓게 잡아 두면 낮 시간 재부팅을 줄일 수 있습니다.
 - 방화벽·포트: 웹은 `127.0.0.1:9021`에만 열려 있어 같은 공유기의 다른 기기에서도 접속되지 않습니다. 공유기 포트포워딩은 필요 없습니다.
 
-## 나중에 API / DB 추가
+## 백엔드 (FastAPI + PostgreSQL)
 
-1. `api/`에 FastAPI + Dockerfile 작성
-2. `docker-compose.yml`의 `api`, `db`, `backend` 네트워크, `db-data` 볼륨 주석 해제, `.env`에 DB 값 입력
-3. `deploy/nginx/default.conf`에서 `upstream api`와 `/api/`, `/ws/`의 `proxy_*` 줄 주석 해제, `return 404` 줄 삭제
-4. 서버는 `CF-Connecting-IP`(프록시가 `X-Forwarded-For`로 전달)를 실제 방문자 IP로 쓰고, 채팅의 `playerId`·`createdAt`은 클라이언트 값 대신 인증 정보와 서버 시각으로 채웁니다
-5. DB 백업: `docker compose exec db pg_dump -U <user> <db> > backup.sql`, 복원: `docker compose exec -T db psql -U <user> <db> < backup.sql`
+```
+브라우저 → web(nginx) ─ /        → React + Phaser 정적 파일
+                      └ /api/*   → api:8000 (FastAPI, 경로 그대로 전달)
+                                   └ db:5432 (PostgreSQL, backend 내부 네트워크 전용)
+```
+
+- `api/`: FastAPI, SQLAlchemy 2, Alembic, Pydantic 2, argon2-cffi. 모든 경로가 `/api`로 시작합니다.
+- 컨테이너가 시작할 때 `alembic upgrade head`로 마이그레이션을 적용한 뒤 uvicorn(워커 1개)을 띄웁니다. 워커가 1개인 이유: 요청 제한 카운터가 메모리에 있어서(`api/app/ratelimit.py`). 늘리려면 Redis 등으로 옮깁니다.
+- nginx는 api를 요청 시점에 찾기 때문에, api가 꺼져 있어도 게임은 뜨고 `/api`만 JSON 503을 돌려줍니다.
+- db는 포트를 열지 않고 `backend`(internal) 네트워크에만 붙습니다. 데이터는 `db-data` 볼륨에 남습니다.
+- 접속 로그는 nginx만 남기고(쿼리스트링 제외), uvicorn 접속 로그는 끕니다 (아이디가 담긴 쿼리가 남지 않게).
+- `/ws/*`는 아직 404입니다 (실시간 기능 미구현).
+
+### 개발 환경 (프론트 9020, API 9200)
+
+```powershell
+# 1) 개발용 PostgreSQL (한 번만, 로컬 127.0.0.1:55432)
+docker run -d --name ggumi-pgdev -e POSTGRES_USER=ggumiroom -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=ggumiroom -p 127.0.0.1:55432:5432 postgres:18.6-alpine
+
+# 2) API (api 폴더에서; 처음엔 uv venv .venv 후 uv pip install -r requirements-dev.txt)
+$env:DATABASE_URL="postgresql+psycopg://ggumiroom:devpass@127.0.0.1:55432/ggumiroom"
+$env:PUBLIC_BASE_URL="http://localhost:9020"; $env:COOKIE_SECURE="false"; $env:ENABLE_DOCS="true"
+.venv\Scripts\alembic upgrade head
+.venv\Scripts\uvicorn app.main:app --port 9200 --reload
+
+# 3) 프론트 (프로젝트 루트). Vite가 /api를 localhost:9200으로 프록시
+pnpm dev   # http://localhost:9020
+
+# API 테스트: 같은 PostgreSQL에 ggumiroom_test DB를 새로 만들어 씀
+.venv\Scripts\python -m pytest
+```
+
+### 스테이징 (운영 반영 전 전체 스택 검증)
+
+운영과 같은 이미지·설정을 다른 프로젝트 이름과 포트로 띄웁니다. 터널은 띄우지 않습니다. `.env.staging`(Git 제외)에 `POSTGRES_PASSWORD`가 필요합니다.
+
+```powershell
+docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.staging.yml --env-file .env.staging up -d --build
+# 사이트 http://localhost:9031, API 문서 http://localhost:9231/api/docs
+# 끄기: 같은 명령에서 up -d --build 대신 down (데이터 유지) / down -v (데이터 삭제)
+```
+
+### 운영 반영 절차 (아직 하지 않음)
+
+1. 반영 직전에 기존 운영 상태를 기록합니다: `git rev-parse HEAD`, `docker image ls ggumiroom-web`.
+2. `.env`에 `POSTGRES_PASSWORD`(긴 무작위 값)를 추가합니다. `API_PORT=9201`도 확인합니다.
+3. `docker compose --profile tunnel up -d --build` 실행.
+   - web 컨테이너가 새 이미지로 바뀌는 몇 초 동안 사이트가 잠깐 끊길 수 있습니다.
+   - db·api가 새로 생기고, 첫 실행 때 마이그레이션이 적용됩니다.
+4. 확인: `https://www.ggumiroom.com/api/health` → `{"status":"ok","db":"ok"}`, 가입·로그인 후 새로고침해도 로그인 유지(운영 HTTPS에서 Secure 쿠키), 초대 링크 주소가 `https://www.ggumiroom.com/invite/...`인지.
+5. 되돌리기: 이전 커밋으로 `docker compose --profile tunnel up -d --build web`(프론트 원복), `docker compose stop api db`(데이터는 볼륨에 남음).
+
+### DB 백업·복원
+
+```powershell
+# 백업 (운영 프로젝트)
+docker compose exec -T db pg_dump -U ggumiroom -d ggumiroom -Fc > backup-$(Get-Date -Format yyyyMMdd).dump
+# 복원
+docker compose exec -T db pg_restore -U ggumiroom -d ggumiroom --clean --if-exists < backup-YYYYMMDD.dump
+```
+
+- 새 마이그레이션을 적용하기 전에는 반드시 백업합니다. 되돌리기: `docker compose exec api alembic downgrade -1`.
+- 백업 파일에는 아이디·닉네임·비밀번호 해시가 들어 있으니 Git이나 공유 폴더에 두지 않습니다.
+- 스테이징에서 `pg_dump` → 새 DB에 `pg_restore` 후 사용자·친구 수가 같은 것을 확인했습니다 (2026-11-06).
 
 ## OCI / AWS로 옮길 때
 

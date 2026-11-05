@@ -1,7 +1,7 @@
 # Ggumiroom production stack.
 #
-#   docker compose up -d --build                    # web only (local check: http://127.0.0.1:9021)
-#   docker compose --profile tunnel up -d --build   # web + Cloudflare Tunnel (needs .env)
+#   docker compose up -d --build                    # web + api + db (local check: http://127.0.0.1:9021)
+#   docker compose --profile tunnel up -d --build   # web + api + db + Cloudflare Tunnel (needs .env)
 #
 # Nothing is exposed to the LAN or the internet directly: web is bound to
 # 127.0.0.1 for local checks only, and public traffic arrives through
@@ -50,32 +50,53 @@ services:
     networks: [edge]
     logging: *logging
 
-  # ---- Later (not used yet) ----
-  # api:
-  #   build: ./api
-  #   restart: unless-stopped
-  #   env_file: .env
-  #   depends_on: { db: { condition: service_healthy } }
-  #   networks: [edge, backend]
-  #   logging: *logging
-  #
-  # db:
-  #   image: postgres:18-alpine
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_DB: ${POSTGRES_DB}
-  #     POSTGRES_USER: ${POSTGRES_USER}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #   volumes: [db-data:/var/lib/postgresql]
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
-  #   networks: [backend] # no ports: reachable only from api
-  #   logging: *logging
+  api:
+    build: ./api
+    image: ggumiroom-api:latest
+    restart: unless-stopped
+    <<: *hardening
+    tmpfs:
+      - /tmp
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ggumiroom}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-ggumiroom}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://www.ggumiroom.com}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+      EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
+    ports:
+      # Host 9201 (localhost only) for direct API checks; public traffic goes web(nginx) -> api:8000.
+      - "127.0.0.1:${API_PORT:-9201}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [edge, backend]
+    logging: *logging
+
+  db:
+    image: postgres:18.6-alpine
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ggumiroom}
+      POSTGRES_USER: ${POSTGRES_USER:-ggumiroom}
+      # Required; postgres refuses to initialize without it.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      # PostgreSQL 18 images keep data under /var/lib/postgresql/18/docker.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    # No ports: reachable only from api over the internal network.
+    networks: [backend]
+    logging: *logging
 
 networks:
   edge: {}
-  # backend:
-  #   internal: true # no outside access at all
+  backend:
+    internal: true # no route to the host or the internet
 
-# volumes:
-#   db-data: {}
+volumes:
+  db-data: {}

@@ -1,0 +1,26 @@
+# Staging overlay: the full stack (web + api + db) on separate ports and a
+# separate project, without the tunnel, for testing before production.
+#
+#   docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.staging.yml \
+#     --env-file .env.staging up -d --build
+#
+# Site: http://localhost:9031  API: http://localhost:9231/api/docs
+# Chrome/Firefox accept Secure cookies on http://localhost, so COOKIE_SECURE
+# stays true like production.
+
+services:
+  web:
+    image: ggumiroom-web:staging
+    ports: !override
+      - "127.0.0.1:9031:8080"
+
+  api:
+    image: ggumiroom-api:staging
+    ports: !override
+      - "127.0.0.1:9231:8000"
+    environment:
+      PUBLIC_BASE_URL: http://localhost:9031
+      ENABLE_DOCS: "true"
+
+  cloudflared:
+    profiles: [never]
