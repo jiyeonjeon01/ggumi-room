@@ -4,6 +4,7 @@ import { createGame, type GameHandle } from '../game/createGame';
 import type { TimeMode } from '../game/environment/TimeOfDayClock';
 import type { Period } from '../game/environment/timeOfDay';
 import type { RoomData } from '../game/room/roomData';
+import { ChatBar } from './ChatBar';
 
 interface Props {
   room: RoomData;
@@ -52,5 +53,13 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
     handleRef.current?.setTimeMode(timeMode);
   }, [timeMode]);
 
-  return <div ref={containerRef} className="absolute inset-0 overflow-hidden" />;
+  return (
+    <>
+      <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
+      <ChatBar
+        onSend={(text) => handleRef.current?.sendChat(text) ?? false}
+        onTypingChange={(typing) => handleRef.current?.setKeyboardEnabled(!typing)}
+      />
+    </>
+  );
 }

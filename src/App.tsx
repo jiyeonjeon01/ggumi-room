@@ -25,8 +25,8 @@ export default function App() {
         <div className="flex items-center gap-3">
           <Logo />
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight text-plum-700 sm:text-2xl">
-              꾸미룸 <span className="ml-1 align-middle text-xs font-bold text-blush-400">Ggumiroom</span>
+            <h1 className="text-2xl tracking-wide text-plum-700 sm:text-3xl">
+              꾸미룸 <span className="ml-1.5 align-middle text-sm tracking-wide text-blush-400">Ggumiroom</span>
             </h1>
             <p className="text-xs text-plum-500 sm:text-sm">나만의 작은 픽셀 방에 놀러 오세요</p>
           </div>
@@ -39,7 +39,7 @@ export default function App() {
               type="button"
               onClick={() => setTheme(id)}
               aria-pressed={theme === id}
-              className={`rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${
+              className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
                 theme === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'
               }`}
             >
@@ -60,13 +60,13 @@ export default function App() {
           <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
             <span aria-hidden>{THEME_EMOJI[theme]}</span>
             <div className="leading-tight">
-              <p className="text-sm font-bold text-plum-700">{room.name}</p>
+              <p className="text-sm tracking-wide text-plum-700">{room.name}</p>
               <p className="text-[11px] text-plum-500">{THEMES[theme].label} · 개인룸</p>
             </div>
             {period && (
               <span
                 data-testid="period-badge"
-                className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] font-semibold text-plum-700"
+                className="ml-1 rounded-full bg-lavender-100 px-2 py-0.5 text-[11px] text-plum-700"
               >
                 <span aria-hidden className="mr-0.5">{PERIOD_EMOJI[period]}</span>
                 {PERIOD_LABEL[period]}
@@ -87,6 +87,7 @@ export default function App() {
           <Hint keys={['클릭']} label="그 자리로 이동" />
           <Hint keys={['↑', '↓', '←', '→']} label="또는" />
           <Hint keys={['W', 'A', 'S', 'D']} label="로 걷기" />
+          <Hint keys={['Enter']} label="채팅" />
         </footer>
       </main>
     </div>
@@ -100,7 +101,7 @@ function TimeDevPanel({ mode, onChange }: { mode: TimeMode; onChange: (m: TimeMo
     ...PERIODS.map((p) => ({ id: p, label: PERIOD_LABEL[p] })),
   ];
   return (
-    <fieldset className="absolute bottom-3 right-3 rounded-lg border border-dashed border-plum-500/60 bg-plum-900/80 px-2 pb-2 pt-0.5 font-mono text-[11px] text-white shadow-lg">
+    <fieldset className="absolute bottom-16 right-3 rounded-lg sm:bottom-3 border border-dashed border-plum-500/60 bg-plum-900/80 px-2 pb-2 pt-0.5 font-mono text-[11px] text-white shadow-lg">
       <legend className="rounded bg-plum-900 px-1 text-[10px] uppercase tracking-wider text-white/80">dev · 시간대</legend>
       <div className="flex gap-1">
         {options.map((o) => (
@@ -125,7 +126,7 @@ function Hint({ keys, label }: { keys: string[]; label: string }) {
       {keys.map((k) => (
         <kbd
           key={k}
-          className="min-w-6 rounded-md bg-white px-1.5 py-0.5 text-center font-sans font-bold text-plum-700 shadow-[0_2px_0_0] shadow-blush-200 ring-1 ring-blush-200"
+          className="min-w-6 rounded-md bg-white px-1.5 py-0.5 text-center font-sans text-plum-700 shadow-[0_2px_0_0] shadow-blush-200 ring-1 ring-blush-200"
         >
           {k}
         </kbd>

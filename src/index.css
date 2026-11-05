@@ -1,7 +1,20 @@
 @import "tailwindcss";
 
+/* 오뮤 다예쁨체 (omyu pretty), converted from the original TTF to WOFF2 with all glyphs. */
+@font-face {
+  font-family: "omyu pretty";
+  src: url("/fonts/omyu-pretty.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+  /* The handwriting glyphs are small for their em size; scale this face up
+     everywhere (DOM and canvas alike) instead of changing every font size. */
+  size-adjust: 118%;
+}
+
 @theme {
-  --font-sans: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-sans: "omyu pretty", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "omyu pretty", ui-monospace, monospace;
   --color-cream: #fffaf3;
   --color-blush-50: #fff5f9;
   --color-blush-100: #fde7f0;

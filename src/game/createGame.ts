@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { ThemeId } from './art/themes';
+import { createChatMessage, LocalChatTransport, normalizeChat, type ChatTransport } from './chat/chat';
 import { TimeOfDayClock, type TimeMode } from './environment/TimeOfDayClock';
 import type { Period } from './environment/timeOfDay';
 import type { RoomData } from './room/roomData';
@@ -9,6 +10,10 @@ import { ROOM_SCENE, RoomScene, type RoomSceneData } from './scenes/RoomScene';
 export interface GameHandle {
   setTheme(theme: ThemeId): void;
   setTimeMode(mode: TimeMode): void;
+  /** Sends a chat message as the local player. Returns false if it was empty after trimming. */
+  sendChat(text: string): boolean;
+  /** Stops keyboard movement (and key capture) while a text input is focused. */
+  setKeyboardEnabled(enabled: boolean): void;
   destroy(): void;
 }
 
@@ -64,6 +69,15 @@ export function createGame(
   });
   callbacks.onPeriodChange?.(clock.period);
 
+  // Chat: today messages loop back inside the browser. To go online, pass a
+  // WebSocketChatTransport here instead; the bubbles only see ChatMessages.
+  const chat: ChatTransport = new LocalChatTransport();
+  const localPlayerId = room.owner;
+  chat.onMessage((message) => {
+    const s = scene();
+    if (s?.sys.isActive()) s.showChat(message);
+  });
+
   const data: RoomSceneData = { room, theme, period: clock.period };
   game.scene.add(ROOM_SCENE, RoomScene, true, data);
 
@@ -71,6 +85,7 @@ export function createGame(
     // Inspection hook for local verification (not included in production builds).
     (window as unknown as { __ggumiroom?: unknown }).__ggumiroom = {
       state: () => scene()?.debugState(),
+      keyboardEnabled: () => game.input.keyboard?.enabled ?? false,
       worldToCanvas: (x: number, y: number) => scene()?.debugWorldToCanvas({ x, y }),
       renderer: () => (game.renderer.type === Phaser.WEBGL ? 'webgl' : 'canvas'),
       clock: {
@@ -85,15 +100,34 @@ export function createGame(
     setTheme(next) {
       const s = scene();
       if (!s || !s.sys.isActive()) return;
-      const restart: RoomSceneData = { room, theme: next, player: s.getPlayerState(), period: clock.period };
+      const restart: RoomSceneData = {
+        room,
+        theme: next,
+        player: s.getPlayerState(),
+        period: clock.period,
+        chat: s.getChatState(),
+      };
       s.scene.restart(restart);
     },
     setTimeMode(mode) {
       clock.setMode(mode);
     },
+    sendChat(text) {
+      const content = normalizeChat(text);
+      if (!content) return false;
+      chat.send(createChatMessage(localPlayerId, content));
+      return true;
+    },
+    setKeyboardEnabled(enabled) {
+      // The manager also stops calling preventDefault on captured keys, so
+      // W/A/S/D and arrows type normally into the chat input.
+      if (game.input.keyboard) game.input.keyboard.enabled = enabled;
+      scene()?.setKeyboardEnabled(enabled);
+    },
     destroy() {
       if (import.meta.env.DEV) delete (window as unknown as { __ggumiroom?: unknown }).__ggumiroom;
       clock.destroy();
+      chat.destroy();
       game.destroy(true);
     },
   };

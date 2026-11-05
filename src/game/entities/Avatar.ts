@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ANCHOR_X, ANCHOR_Y, FRAME_H, FRAME_W } from '../art/avatarArt';
+import { FONT_STACK } from '../art/fonts';
 import { AVATAR_TEXTURE, SHADOW_TEXTURE } from '../art/textures';
 import type { Rect } from '../core/collision';
 import type { DepthItem } from '../core/depthSort';
@@ -62,6 +63,12 @@ export class Avatar implements DepthItem {
       this.facing = `${front ? 'front' : 'back'}-${right ? 'right' : 'left'}`;
     }
     this.syncView();
+  }
+
+  /** World px point just above the name tag, where a speech bubble's tail points. */
+  get bubbleAnchor(): Vec2 {
+    const top = this.label ? this.label.y - this.label.displayHeight : this.sprite.y - FRAME_H;
+    return { x: this.sprite.x, y: top - 1 };
   }
 
   setPosition(pos: Vec2): void {
@@ -140,9 +147,8 @@ function ensureAvatarAnimations(scene: Phaser.Scene): void {
 function createNameLabel(scene: Phaser.Scene, name: string): Phaser.GameObjects.Text {
   const text = scene.add
     .text(0, 0, name, {
-      fontFamily: '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif',
+      fontFamily: FONT_STACK,
       fontSize: '6px',
-      fontStyle: 'bold',
       color: '#7a4a68',
       backgroundColor: '#fffaf3e6',
       padding: { x: 3, y: 1 },

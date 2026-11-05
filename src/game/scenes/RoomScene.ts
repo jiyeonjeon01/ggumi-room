@@ -11,6 +11,8 @@ import { AvatarController } from '../entities/AvatarController';
 import { lookFor } from '../environment/look';
 import { RoomLighting } from '../environment/RoomLighting';
 import type { Period } from '../environment/timeOfDay';
+import { BUBBLE_MS, type ChatMessage } from '../chat/chat';
+import { SpeechBubble } from '../chat/SpeechBubble';
 import { WindowLight } from '../environment/WindowLight';
 import { WindowView } from '../environment/WindowView';
 import { FURNITURE, spriteFrame } from '../room/furniture';
@@ -24,6 +26,14 @@ export interface RoomSceneData {
   /** Restores the player when the scene restarts (e.g. theme switch). */
   player?: { pos: Vec2; facing: Facing };
   period: Period;
+  /** The local player's bubble carried over a restart, with its original expiry time. */
+  chat?: ShownChat;
+}
+
+export interface ShownChat {
+  message: ChatMessage;
+  /** Date.now() time at which the bubble disappears. */
+  expiresAt: number;
 }
 
 /**
@@ -82,6 +92,10 @@ export class RoomScene extends Phaser.Scene {
   private lighting!: RoomLighting;
   private windowLight!: WindowLight;
   private nextEnvTick = 0;
+  private bubble!: SpeechBubble;
+  private shownChat: ShownChat | null = null;
+  private bubbleTimer: Phaser.Time.TimerEvent | null = null;
+  private initialChat?: ShownChat;
 
   private world!: CollisionWorld;
   private player!: Avatar;
@@ -99,6 +113,9 @@ export class RoomScene extends Phaser.Scene {
     this.themeId = data.theme ?? data.room.theme;
     this.initialPlayer = data.player;
     this.period = data.period;
+    this.initialChat = data.chat;
+    this.shownChat = null;
+    this.bubbleTimer = null;
     this.sortables = [];
     this.windows = [];
     this.nextEnvTick = 0;
@@ -177,11 +194,17 @@ export class RoomScene extends Phaser.Scene {
     this.tweens.add({ targets: this.marker, alpha: 0.35, yoyo: true, repeat: -1, duration: 450 });
     this.controller = new AvatarController(this.player, world, nav, (dest) => this.showMarker(dest));
 
+    this.bubble = new SpeechBubble(this);
+    if (this.initialChat) this.showChat(this.initialChat.message, this.initialChat.expiresAt);
+
     this.setupInput();
     this.fitCamera();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.fitCamera, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.fitCamera, this);
+      this.bubbleTimer?.remove();
+      this.bubbleTimer = null;
+      this.bubble.destroy();
     });
     this.sortDepth();
   }
@@ -194,6 +217,7 @@ export class RoomScene extends Phaser.Scene {
     const y = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
     this.controller.update(dt, x, y);
     this.sortDepth();
+    this.bubble.place(this.player.bubbleAnchor, this.cameras.main.worldView);
 
     // Window scenery: cheap check at 10 Hz, re-render only on visible change.
     // Browsers suspend rAF for hidden tabs; the explicit check also covers
@@ -217,6 +241,41 @@ export class RoomScene extends Phaser.Scene {
     this.windowLight.apply(look, animate);
   }
 
+  /**
+   * Shows a chat message as a speech bubble over its player. Only the local
+   * player exists today; remote players would get their own Avatar + bubble
+   * looked up by `message.playerId`. A new message replaces the old bubble
+   * and restarts its timer (the old timer is removed, so it can't hide the
+   * newer bubble early).
+   */
+  showChat(message: ChatMessage, expiresAt = Date.now() + BUBBLE_MS): void {
+    if (message.playerId !== this.room.owner) return;
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) return;
+    this.bubbleTimer?.remove();
+    this.shownChat = { message, expiresAt };
+    this.bubble.show(message.content);
+    this.bubble.place(this.player.bubbleAnchor, this.cameras.main.worldView);
+    this.bubbleTimer = this.time.delayedCall(remaining, () => {
+      this.bubbleTimer = null;
+      this.shownChat = null;
+      this.bubble.hide();
+    });
+  }
+
+  /** The bubble currently shown, used to carry it over scene restarts (theme switch). */
+  getChatState(): ShownChat | undefined {
+    return this.shownChat ?? undefined;
+  }
+
+  /**
+   * Turns keyboard movement off while the chat input has focus. Keys held at
+   * that moment are released so the character doesn't keep walking.
+   */
+  setKeyboardEnabled(enabled: boolean): void {
+    if (!enabled) this.input.keyboard?.resetKeys();
+  }
+
   /** Current player state, used to carry it over scene restarts. */
   getPlayerState(): NonNullable<RoomSceneData['player']> {
     return { pos: { ...this.player.pos }, facing: this.player.facing };
@@ -235,6 +294,14 @@ export class RoomScene extends Phaser.Scene {
       period: this.period,
       windows: this.windows.map((w) => ({ redraws: w.redraws, ...w.lastState })),
       lighting: this.lighting.state,
+      bubble: {
+        visible: this.bubble.visible,
+        content: this.bubble.content,
+        expiresAt: this.shownChat?.expiresAt ?? null,
+        ...this.bubble.bounds,
+        anchor: this.player.bubbleAnchor,
+        view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
+      },
       windowLight: this.windowLight.state,
       depthOrder: sortByDepth(this.sortables).map((s) => (s instanceof Avatar ? 'player' : s.image.texture.key)),
     };
@@ -316,5 +383,6 @@ export class RoomScene extends Phaser.Scene {
     cam.setZoom(zoom);
     cam.centerOn(Math.round((left + right) / 2), Math.round((top + bottom) / 2));
     this.player.setZoom(zoom);
+    this.bubble.setZoom(zoom);
   }
 }

@@ -23,6 +23,7 @@ Node 24 / pnpm 12에서 확인했습니다.
 | 바닥 클릭 | 그 위치로 길을 찾아 이동 (가구·방 밖을 클릭하면 가장 가까운 빈 자리로) |
 | ↑ ↓ ← → / W A S D | 화면 기준 방향으로 걷기. 두 키 조합(예: ↑+→)은 벽과 평행하게 이동 |
 | 상단 테마 버튼 | 파스텔 / 갤럭시 / 플랜트 테마 전환 (캐릭터 위치·시간대 유지) |
+| Enter | 채팅 입력창 열기 → 입력 후 Enter로 전송, Esc로 취소 (최대 24자, 말풍선 5초) |
 | `dev · 시간대` 패널 (우하단) | 자동(KST) / 새벽 / 낮 / 노을 / 밤 강제 전환. **개발 모드 또는 `?debug` 주소에서만 표시** |
 
 키 입력은 진행 중인 클릭 이동을 즉시 취소합니다.
@@ -30,6 +31,8 @@ Node 24 / pnpm 12에서 확인했습니다.
 ## 기술 스택
 
 React 19 · TypeScript 7 (strict) · Vite 8 · Phaser 4 · Tailwind CSS 4 · pnpm
+
+폰트: 오뮤 다예쁨체(omyu pretty) 하나로 페이지 UI와 게임 안 글자(이름표·말풍선)를 모두 씁니다. `public/fonts/omyu-pretty.woff2`(원본 TTF에서 모든 글자를 유지한 채 WOFF2로 변환, 7.6MB → 3.6MB)를 `index.css`의 `@font-face`로 불러오고, 손글씨체라 글자가 작게 보여 `size-adjust: 118%`로 키웠습니다. Phaser 글자는 처음 그릴 때 한 번 래스터화되므로 `main.tsx`에서 폰트 로드(최대 4초)를 기다린 뒤 앱을 시작합니다.
 
 - **React**: 페이지 UI(헤더, 테마 전환, 방 이름, 조작 안내). 게임 프레임마다 리렌더링하지 않습니다.
 - **Phaser**: 방 렌더링, 캐릭터 이동·애니메이션, 입력 처리.
@@ -40,6 +43,7 @@ React 19 · TypeScript 7 (strict) · Vite 8 · Phaser 4 · Tailwind CSS 4 · pnp
 ```
 src/
   App.tsx                      페이지 UI (테마 선택, 방 이름 배지, 조작 안내)
+  components/ChatBar.tsx       하단 채팅 입력창 (Enter 열기/전송, Esc 취소, IME 조합 처리)
   components/GameView.tsx      Phaser 마운트/정리. props 변경은 GameHandle로 전달
   game/
     createGame.ts              Phaser.Game 생성, React용 핸들(setTheme/destroy)
@@ -62,6 +66,9 @@ src/
       WindowView.ts            창밖 풍경 텍스처 갱신 + 창틀 오버레이
       RoomLighting.ts          실내 MULTIPLY 조명 + 스탠드 ADD 글로우
       WindowLight.ts           창문 자연광: 유리 광택 + 바닥 창살 빛 (스탠드와 별개, 시간대별 크로스페이드)
+    chat/                      ← 로컬 채팅 말풍선
+      chat.ts                  ChatMessage, ChatTransport, LocalChatTransport, 24자 제한, 측정 너비 기반 줄바꿈 (순수 함수)
+      SpeechBubble.ts          픽셀 말풍선 뷰: 2줄, 내용에 맞춘 크기, 캐릭터 추적, 카메라 화면 안 보정
     art/                       임시 픽셀아트 생성기 (교체 대상)
       windowArt.ts             창틀 그리기, 창밖 풍경 합성기 (픽셀 단위 마스킹)
       sunlightArt.ts           창문빛 바닥 투영(월드 좌표 역추적), 유리 광택 텍스처
@@ -208,3 +215,12 @@ src/
 3. 방 데이터 저장(백엔드) → 친구 방 방문
 4. WebSocket 멀티플레이어(소셜룸) — 원격 `Avatar`를 위치 보간으로 구동
 5. 채팅 말풍선, 방명록, BGM
+
+## 채팅 (로컬 말풍선)
+
+DB·WebSocket 없이 브라우저 안에서만 동작합니다. 새로고침하면 사라지고 아무 데도 저장하지 않습니다.
+
+- **흐름**: `ChatBar`(React) → `GameHandle.sendChat` → `normalizeChat`(공백 정리, 빈 메시지 거부, 24자 제한) → `ChatTransport.send` → `onMessage` → `RoomScene.showChat` → `SpeechBubble`.
+- **전송과 표시 분리**: 말풍선은 `ChatMessage`만 받습니다. 지금은 `LocalChatTransport`가 보낸 메시지를 그대로 되돌려 주고, 나중에 `createGame.ts`에서 `WebSocketChatTransport`로 바꾸면 다른 플레이어의 메시지도 같은 경로로 들어옵니다. 서버는 클라이언트가 보낸 `playerId`·`createdAt`을 믿지 말고 인증 정보와 서버 시각으로 다시 채워야 합니다.
+- **입력**: 입력창에 포커스가 있는 동안 Phaser 키보드 매니저를 꺼서 W/A/S/D·방향키가 캐릭터를 움직이지 않고 글자로 입력됩니다. 한글 조합 중 Enter(`isComposing`/keyCode 229)는 전송하지 않고, 전송 직후 들어오는 중복 Enter로 입력창이 다시 열리지 않게 막습니다.
+- **말풍선**: 실제 폰트 너비로 줄바꿈해 최대 2줄, 크기는 렌더링된 글자에 맞춥니다. 이름표 위, 모든 가구·조명 위 UI 층에 그리고, 매 프레임 캐릭터를 따라가며 카메라 화면 밖으로 나가지 않게 보정합니다(꼬리는 캐릭터를 계속 가리킴). 새 메시지는 이전 말풍선과 타이머를 즉시 교체하고, 테마를 바꿔도 남은 시간 그대로 유지됩니다.
