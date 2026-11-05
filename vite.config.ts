@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Port plan: dev 9020 / Docker host 9021 (frontend), dev 9200 / Docker host 9201 (FastAPI, later).
+  // strictPort: fail loudly instead of silently moving to another port.
+  server: { port: 9020, strictPort: true },
   build: {
     // Phaser is large (~1MB min); keep it in its own cacheable chunk.
     chunkSizeWarningLimit: 1600,

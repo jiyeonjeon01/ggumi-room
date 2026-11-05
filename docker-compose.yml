@@ -1,6 +1,6 @@
 # Ggumiroom production stack.
 #
-#   docker compose up -d --build                    # web only (local check: http://127.0.0.1:8080)
+#   docker compose up -d --build                    # web only (local check: http://127.0.0.1:9021)
 #   docker compose --profile tunnel up -d --build   # web + Cloudflare Tunnel (needs .env)
 #
 # Nothing is exposed to the LAN or the internet directly: web is bound to
@@ -29,7 +29,8 @@ services:
     tmpfs:
       - /tmp # nginx pid and temp files (the image runs nginx as a non-root user)
     ports:
-      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+      # Host 9021 (localhost only) -> nginx 8080 inside. cloudflared uses http://web:8080.
+      - "127.0.0.1:${WEB_PORT:-9021}:8080"
     networks: [edge]
     logging: *logging
 

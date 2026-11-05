@@ -8,7 +8,7 @@
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:5173
+pnpm dev          # http://localhost:9020
 pnpm typecheck    # TypeScript (strict) 검사
 pnpm test         # 핵심 시스템 단위 테스트 (vitest)
 pnpm build        # 프로덕션 빌드 → dist/
@@ -30,10 +30,12 @@ Node 24 / pnpm 12에서 확인했습니다.
 
 ## 배포
 
-집 PC의 Docker(nginx 정적 서빙) + Cloudflare Tunnel로 `https://ggumiroom.com`에 공개합니다. 실행 명령, Cloudflare·후이즈 설정, API/DB 추가, OCI/AWS 이전 방법은 [docs/DEPLOY.md](docs/DEPLOY.md)를 보세요.
+**서비스 주소: https://www.ggumiroom.com** (다른 주소는 모두 여기로 이동)
+
+집 PC의 Docker(nginx 정적 서빙) + Cloudflare Tunnel로 공개합니다. 실행 명령, Cloudflare·후이즈 설정, API/DB 추가, OCI/AWS 이전 방법은 [docs/DEPLOY.md](docs/DEPLOY.md)를 보세요.
 
 ```bash
-docker compose up -d --build                    # 웹만 (http://127.0.0.1:8080)
+docker compose up -d --build                    # 웹만 (http://127.0.0.1:9021)
 docker compose --profile tunnel up -d --build   # 웹 + 터널 (.env 필요)
 ```
 

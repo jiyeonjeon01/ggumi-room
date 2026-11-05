@@ -1,5 +1,18 @@
 # 꾸미룸 배포 가이드 (집 PC Docker + Cloudflare Tunnel)
 
+**대표 URL: https://www.ggumiroom.com** — `http://`·`https://`, `www` 유무 네 가지 주소가 모두 여기로 301 이동합니다 (경로·쿼리 유지).
+
+## 현재 운영 상태 (2026-11-06 확인)
+
+| 항목 | 상태 |
+|---|---|
+| 네임서버 | `dimitris.ns.cloudflare.com`, `gina.ns.cloudflare.com` (등록 정보·1.1.1.1·8.8.8.8·9.9.9.9·KT DNS 반영), DNSSEC 꺼짐 |
+| DNS | `ggumiroom.com`, `www`가 Cloudflare 프록시 IP로만 응답. 집 공인 IP 미노출, MX·TXT 없음 |
+| 리디렉션 | `ggumiroom.com` → `https://www.ggumiroom.com` (Cloudflare 리디렉션 규칙), Always Use HTTPS 켜짐 |
+| 인증서 | Let's Encrypt(Cloudflare 발급), `ggumiroom.com` + `*.ggumiroom.com`, TLS 1.3 |
+| 터널 | `ggumiroom-home`, 연결 4개(서울 icn), 경로 `ggumiroom.com`·`www.ggumiroom.com` → `http://web:8080`, 그 외 404 |
+| 캐시 | `/assets/`, `/fonts/`는 Cloudflare 캐시 HIT, HTML은 매번 새로 받음 |
+
 ```
 방문자 → https://ggumiroom.com → Cloudflare(DNS·HTTPS·WAF) → Cloudflare Tunnel
       → 집 PC의 cloudflared 컨테이너 → web 컨테이너(nginx, 정적 React+Phaser)
@@ -8,6 +21,18 @@
 - 공유기 포트포워딩 없음, 집 공인 IP를 DNS에 올리지 않음 (cloudflared가 바깥으로 연결을 엶)
 - Cloudflare에는 소스코드·DB를 올리지 않음. Cloudflare 전용 SDK도 쓰지 않음
 - 나중에 `/api/*`, `/ws/*` → FastAPI, PostgreSQL은 Docker 내부 네트워크 전용
+
+## 포트 규칙
+
+| 서비스 | 개발 (`pnpm dev` 등) | Docker 운영: Windows 호스트 | Docker 내부 (컨테이너) | Cloudflare Tunnel 대상 |
+|---|---|---|---|---|
+| 프론트엔드 | 9020 | `127.0.0.1:9021` | `web:8080` (nginx) | `http://web:8080` |
+| FastAPI (예정) | 9200 | `127.0.0.1:9201` (필요할 때만) | `api:8000` | 직접 연결하지 않음: `/api`, `/ws`를 web(nginx)이 `api:8000`으로 전달 |
+| PostgreSQL (예정) | - | 공개 안 함 | `db:5432` (`backend` 내부 네트워크) | - |
+
+- 호스트 포트는 모두 `127.0.0.1`에만 바인딩합니다 (같은 공유기의 다른 기기·인터넷에서 접속 불가). 공개 접속은 터널로만 들어옵니다.
+- 개발 서버(9020)와 운영 컨테이너(9021)는 포트가 달라 동시에 실행할 수 있습니다.
+- 호스트 포트는 `.env`의 `WEB_PORT`로 바꿀 수 있습니다 (기본 9021). 터널 대상(`web:8080`)은 호스트 포트와 무관합니다.
 
 ## 파일
 
@@ -23,7 +48,7 @@
 ## 명령어
 
 ```powershell
-# 웹만 (로컬 확인: http://127.0.0.1:8080)
+# 웹만 (로컬 확인: http://127.0.0.1:9021)
 docker compose up -d --build
 
 # 웹 + 터널 (.env에 CLOUDFLARE_TUNNEL_TOKEN 필요)
@@ -77,7 +102,7 @@ nslookup -type=NS ggumiroom.com 8.8.8.8
    **이 명령은 실행하지 말고**, `--token` 뒤의 긴 문자열만 복사합니다. (토큰은 비밀번호와 같습니다. 채팅·Git·스크린샷에 올리지 마세요.)
 4. 프로젝트 폴더에서 `.env.example`을 `.env`로 복사하고 `CLOUDFLARE_TUNNEL_TOKEN=` 뒤에 붙여 넣고 저장합니다.
 5. `docker compose --profile tunnel up -d --build` → 대시보드의 터널 상태가 **HEALTHY**가 되는지 확인
-6. 터널의 **Public Hostname**(화면에 따라 *Published application routes*) 탭 → **Add**
+6. **Networking → Tunnels → `ggumiroom-home` → Routes → Published application** (예전 화면: Zero Trust → Networks → Tunnels → 터널 → *Public Hostname* 탭) → **Add**
    - Subdomain: 비움 / Domain: `ggumiroom.com` / Service Type: `HTTP` / URL: `web:8080` → 저장
    - 한 번 더: Subdomain `www` / Domain `ggumiroom.com` / `HTTP` / `web:8080`
    - Cloudflare가 터널용 CNAME 레코드를 자동으로 만듭니다 (공인 IP가 아님).
@@ -97,7 +122,7 @@ nslookup -type=NS ggumiroom.com 8.8.8.8
   - Docker Desktop은 **Windows에 로그인해야** 시작됩니다. Windows 업데이트로 재부팅되면 로그인 전까지 사이트가 내려가 있습니다.
 - 전원: 전원 연결 시 절전·최대 절전이 "사용 안 함"으로 되어 있어 괜찮습니다 (2026-11-05 확인).
 - Windows 업데이트 자동 재부팅: 설정 → Windows 업데이트 → 고급 옵션 → *사용 시간*을 넓게 잡아 두면 낮 시간 재부팅을 줄일 수 있습니다.
-- 방화벽·포트: 웹은 `127.0.0.1:8080`에만 열려 있어 같은 공유기의 다른 기기에서도 접속되지 않습니다. 공유기 포트포워딩은 필요 없습니다.
+- 방화벽·포트: 웹은 `127.0.0.1:9021`에만 열려 있어 같은 공유기의 다른 기기에서도 접속되지 않습니다. 공유기 포트포워딩은 필요 없습니다.
 
 ## 나중에 API / DB 추가
 
