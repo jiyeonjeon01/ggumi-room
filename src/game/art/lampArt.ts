@@ -51,10 +51,17 @@ export function drawWallGlow(wall: 'left' | 'right', u: number, z: number, color
 }
 
 /** A screen facing +y: the glass on the plane y = `y`, spanning x0..x1, z0..z1 (pixels). */
+/**
+ * A screen standing on a surface. With axis 'y' the glass lies on the plane
+ * y = v and spans x in [u0, u1], facing +y; with axis 'x' it lies on x = v,
+ * spans y, and faces +x (the same monitor turned 90 degrees).
+ */
 export interface ScreenPlacement {
-  x0: number;
-  x1: number;
-  y: number;
+  axis: 'x' | 'y';
+  u0: number;
+  u1: number;
+  v: number;
+  /** Glass bottom/top above the floor (pixels). */
   z0: number;
   z1: number;
   /** Height of the surface in front of the screen (desk top), and how far it reaches (tiles). */
@@ -66,39 +73,44 @@ export interface ScreenPlacement {
  * Light of a screen: the screen face itself glowing, and a soft fan of light
  * on the desk top in front of it that widens and fades away from the screen.
  * Nothing on the floor; a monitor is too dim to light the room.
+ *
+ * Computed for axis 'y'; axis 'x' is the same with world x and y swapped,
+ * which on screen just negates the horizontal pixel offset.
  */
 export function drawScreenLight(s: ScreenPlacement, color: number): LayerArt {
-  const far = s.y + s.surfaceDepth;
+  const flip = s.axis === 'x' ? -1 : 1;
+  const far = s.v + s.surfaceDepth;
   const spread = 0.25;
+  // Corners as (along the glass, away from it, height).
   const corners = [
-    [s.x0, s.y, s.z1],
-    [s.x1, s.y, s.z1],
-    [s.x0 - spread, far, s.surfaceZ],
-    [s.x1 + spread, far, s.surfaceZ],
+    [s.u0, s.v, s.z1],
+    [s.u1, s.v, s.z1],
+    [s.u0 - spread, far, s.surfaceZ],
+    [s.u1 + spread, far, s.surfaceZ],
   ] as const;
   const pc = canvasAround(
-    corners.map(([x, y]) => (x - y) * HW),
-    corners.map(([x, y, z]) => (x + y) * HH - z),
+    corners.map(([u, v]) => flip * (u - v) * HW),
+    corners.map(([u, v, z]) => (u + v) * HH - z),
   );
   for (let py = 0; py < pc.height; py++) {
     for (let px = 0; px < pc.width; px++) {
-      const sx = (px + 0.5 - pc.ox) / HW;
-      // Screen face: plane y = s.y.
-      const fx = sx + s.y;
-      const fz = (fx + s.y) * HH - (py + 0.5 - pc.oy);
-      if (fx >= s.x0 && fx <= s.x1 && fz >= s.z0 && fz <= s.z1) {
+      const sx = (flip * (px + 0.5 - pc.ox)) / HW;
+      // Screen face: plane v.
+      const fu = sx + s.v;
+      const fz = (fu + s.v) * HH - (py + 0.5 - pc.oy);
+      if (fu >= s.u0 && fu <= s.u1 && fz >= s.z0 && fz <= s.z1) {
         pc.set(px, py, color, 200);
         continue;
       }
       // Desk top: horizontal plane at surfaceZ.
       const sy = (py + 0.5 - pc.oy + s.surfaceZ) / HH;
-      const X = (sx + sy) / 2;
-      const Y = (sy - sx) / 2;
-      const t = (Y - s.y) / s.surfaceDepth;
+      const U = (sx + sy) / 2;
+      const V = (sy - sx) / 2;
+      const t = (V - s.v) / s.surfaceDepth;
       if (t < 0 || t > 1) continue;
       const w = spread * t;
-      if (X < s.x0 - w || X > s.x1 + w) continue;
-      const side = Math.min(1, Math.min(X - (s.x0 - w), s.x1 + w - X) / 0.15);
+      if (U < s.u0 - w || U > s.u1 + w) continue;
+      const side = Math.min(1, Math.min(U - (s.u0 - w), s.u1 + w - U) / 0.15);
       const v = (1 - t) * side;
       const a = v > 0.6 ? 150 : v > 0.3 ? 95 : v > 0.08 ? ((px + py) % 2 ? 55 : 0) : 0;
       if (a) pc.set(px, py, color, a);

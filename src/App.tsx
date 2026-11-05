@@ -1,18 +1,21 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
-import { navigate, useRoute } from './app/router';
+import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
 import { FriendsPanel } from './components/FriendsPanel';
-import { GameView } from './components/GameView';
+import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
+import { EditBar, EditorPanel, useEditorKeys } from './components/RoomEditor';
 import { RoomLayout } from './components/RoomLayout';
-import { Button, Card, ToastProvider, useToast } from './components/ui';
+import { Button, Card, Modal, ToastProvider, useToast } from './components/ui';
 import { THEME_IDS, THEMES, type ThemeId } from './game/art/themes';
 import { isWebGLAvailable } from './game/createGame';
 import type { TimeMode } from './game/environment/TimeOfDayClock';
 import { PERIOD_LABEL, PERIODS, type Period } from './game/environment/timeOfDay';
-import { DEMO_ROOM, type RoomData } from './game/room/roomData';
+import type { LayoutEditor } from './game/core/layoutEditor';
+import { isFurnitureType, LAYOUT_ERROR_TEXT, type Facing, type LayoutItem } from './game/core/placement';
+import { DEMO_ROOM, toPlacements, type RoomData } from './game/room/roomData';
 import { finishAuth, LoginPage, SignupPage } from './pages/AuthPage';
 import { InvitePage } from './pages/InvitePage';
 
@@ -245,10 +248,98 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
   // switches go through the game handle without a rebuild.
   const { id: roomId, name: roomName } = info;
   const initialTheme = info.theme;
+  const initialItems = info.items;
   const room = useMemo<RoomData>(
-    () => ({ ...DEMO_ROOM, id: roomId, name: roomName, owner: nickname, theme: initialTheme }),
+    () => ({
+      ...DEMO_ROOM,
+      id: roomId,
+      name: roomName,
+      owner: nickname,
+      theme: initialTheme,
+      furniture: toPlacements(layoutFromServer(initialItems)),
+    }),
+    // Saved layouts after this are applied by the game itself (no rebuild).
     [roomId, roomName, nickname],
   );
+
+  // ---- decorating
+  const controls = useRef<GameControls | null>(null);
+  const [editor, setEditor] = useState<LayoutEditor | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const notice = useCallback((m: string) => toast(m), [toast]);
+
+  const startEditing = () => {
+    const ed = controls.current?.startEdit((error) => toast(LAYOUT_ERROR_TEXT[error.code]));
+    if (ed) setEditor(ed);
+  };
+  const finishEditing = useCallback((layout: readonly LayoutItem[] | null) => {
+    controls.current?.endEdit(layout);
+    setEditor(null);
+    setConflict(false);
+  }, []);
+  const confirmDiscard = useCallback(
+    () => !editor?.dirty || window.confirm('저장하지 않은 변경 사항이 있어요. 꾸미기를 그만둘까요?'),
+    [editor],
+  );
+  const cancelEditing = useCallback(() => {
+    if (confirmDiscard()) finishEditing(null);
+  }, [confirmDiscard, finishEditing]);
+
+  const saveLayout = async () => {
+    if (!editor) return;
+    setSaving(true);
+    try {
+      const saved = await api<RoomInfo>('PUT', `/api/rooms/${info.id}/items`, {
+        layout_version: info.layout_version,
+        items: editor.layout(),
+      });
+      onInfo(saved);
+      finishEditing(layoutFromServer(saved.items));
+      toast('방을 저장했어요! 🛋');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) setConflict(true);
+      else toast(e instanceof ApiError ? e.detail.message : '저장하지 못했어요.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadLatest = async () => {
+    try {
+      const latest = await api<RoomInfo>('GET', `/api/rooms/${info.id}`);
+      onInfo(latest);
+      finishEditing(layoutFromServer(latest.items));
+      toast('최신 배치를 불러왔어요.');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.detail.message : '불러오지 못했어요.');
+    }
+  };
+
+  useEditorKeys(editor, notice, cancelEditing);
+
+  // Unsaved changes: ask before leaving the page (in-app links, back button, reload/close).
+  useEffect(() => {
+    if (!editor) return;
+    setLeaveGuard(() => confirmDiscard());
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (editor.dirty) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      setLeaveGuard(null);
+      window.removeEventListener('beforeunload', onUnload);
+    };
+  }, [editor, confirmDiscard]);
+
+  const editorProps = editor && {
+    editor,
+    theme: info.theme,
+    saving,
+    onSave: () => void saveLayout(),
+    onCancel: cancelEditing,
+    onNotice: notice,
+  };
 
   const saveTheme = useCallback(
     async (theme: ThemeId) => {
@@ -280,15 +371,32 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
 
   const where = info.access === 'friend' ? '친구의 방' : info.access === 'guest' ? '초대받은 방' : '내 방';
   return (
+    <>
     <RoomScreen
       room={room}
       theme={info.theme}
       title={info.name}
-      subtitle={`${THEMES[info.theme].label} · ${where}`}
+      subtitle={`${THEMES[info.theme].label} · ${where}${editor ? ' · 꾸미는 중' : ''}`}
+      controlsRef={controls}
+      editing={!!editor}
+      editBar={editorProps && <EditBar {...editorProps} />}
       panels={{
         badge: incomingCount,
         my: (close) =>
-          me && <MyPanel me={me} room={info} onTheme={saveTheme} onInvite={() => (close?.(), void invite())} onNavigate={close} />,
+          editorProps ? (
+            <EditorPanel {...editorProps} />
+          ) : (
+            me && (
+              <MyPanel
+                me={me}
+                room={info}
+                onTheme={saveTheme}
+                onInvite={() => (close?.(), void invite())}
+                onDecorate={() => (close?.(), startEditing())}
+                onNavigate={close}
+              />
+            )
+          ),
         friends: (close) => <FriendsPanel onNavigate={close} />,
       }}
       banner={
@@ -300,7 +408,30 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
           )
         }
     />
+    {conflict && (
+      <Modal title="방 배치가 먼저 바뀌었어요" onClose={() => setConflict(false)}>
+        <p className="mb-4 text-sm leading-relaxed text-plum-700">
+          다른 창이나 기기에서 이 방의 가구 배치를 먼저 저장했어요. 지금 꾸민 내용은 아직 저장되지 않았어요.
+          <br />
+          최신 배치를 불러온 뒤 다시 꾸며 주세요.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="soft" className="flex-1" onClick={() => setConflict(false)}>
+            계속 보기
+          </Button>
+          <Button className="flex-1" onClick={() => void loadLatest()}>
+            최신 배치 불러오기
+          </Button>
+        </div>
+      </Modal>
+    )}
+    </>
   );
+}
+
+/** Server items -> editor layout (unknown types from a newer catalog are skipped). */
+function layoutFromServer(items: RoomInfo['items']): LayoutItem[] {
+  return items.flatMap((i) => (isFurnitureType(i.type) ? [{ type: i.type, x: i.x, y: i.y, facing: (i.facing === 1 ? 1 : 0) as Facing }] : []));
 }
 
 function RoomScreen({
@@ -311,6 +442,9 @@ function RoomScreen({
   subtitle,
   banner,
   panels,
+  controlsRef,
+  editing = false,
+  editBar,
 }: {
   room: RoomData;
   theme: ThemeId;
@@ -319,6 +453,10 @@ function RoomScreen({
   title?: string;
   subtitle: string;
   banner?: ReactNode;
+  controlsRef?: { current: GameControls | null };
+  editing?: boolean;
+  /** Decorating tools shown under the game on tablet/mobile. */
+  editBar?: ReactNode;
   /** Logged-in rooms: side panels / rail / tabs around the game (see RoomLayout). */
   panels?: {
     badge: number;
@@ -353,7 +491,7 @@ function RoomScreen({
       className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
       style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
     >
-      <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} />
+      <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} controlsRef={controlsRef} editing={editing} />
 
       <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
         <span aria-hidden>{THEME_EMOJI[theme]}</span>
@@ -398,7 +536,7 @@ function RoomScreen({
     // Theme buttons live in the left panel here, not in the header.
     return (
       <Layout>
-        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer}>
+        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer} editBar={editBar}>
           {stage}
         </RoomLayout>
       </Layout>

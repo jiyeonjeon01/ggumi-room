@@ -16,12 +16,15 @@ export function MyPanel({
   room,
   onTheme,
   onInvite,
+  onDecorate,
   onNavigate,
 }: {
   me: Me;
   room: RoomInfo;
   onTheme: (t: ThemeId) => void;
   onInvite: () => void;
+  /** Starts decorating (furniture). */
+  onDecorate: () => void;
   /** Lets a drawer/sheet close itself when leaving the room. */
   onNavigate?: () => void;
 }) {
@@ -65,6 +68,9 @@ export function MyPanel({
               ))}
             </div>
           </section>
+          <Button variant="soft" className="w-full" onClick={onDecorate}>
+            🛋 방 꾸미기
+          </Button>
           <Button className="w-full" onClick={onInvite}>
             💌 친구 초대하기
           </Button>

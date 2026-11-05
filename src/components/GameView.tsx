@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ThemeId } from '../game/art/themes';
+import type { LayoutEditor } from '../game/core/layoutEditor';
+import type { LayoutError, LayoutItem } from '../game/core/placement';
 import { createGame, type GameHandle } from '../game/createGame';
 import type { TimeMode } from '../game/environment/TimeOfDayClock';
 import type { Period } from '../game/environment/timeOfDay';
@@ -14,8 +16,18 @@ function isTextEntry(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
+/** What the page can ask of the running game (decorating). */
+export interface GameControls {
+  startEdit(onReject: (error: LayoutError) => void): LayoutEditor | null;
+  endEdit(layout: readonly LayoutItem[] | null): void;
+}
+
 interface Props {
   room: RoomData;
+  /** Filled with the game's controls while it runs. */
+  controlsRef?: { current: GameControls | null };
+  /** Decorating: hide the chat bar (the character can't talk or walk meanwhile). */
+  editing?: boolean;
   theme: ThemeId;
   timeMode: TimeMode;
   onPeriodChange?: (period: Period) => void;
@@ -26,7 +38,7 @@ interface Props {
  * destroyed on unmount; prop changes are forwarded through the GameHandle
  * instead of re-creating the game. React never re-renders per game frame.
  */
-export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
+export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, editing = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<GameHandle | null>(null);
   const themeRef = useRef(theme);
@@ -43,6 +55,7 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
       onPeriodChange: (p) => periodCallbackRef.current?.(p),
     });
     handleRef.current = handle;
+    if (controlsRef) controlsRef.current = { startEdit: (r) => handle.startEdit(r), endEdit: (l) => handle.endEdit(l) };
 
     // Any text field on the page (chat, friend search, forms) pauses game
     // keys, so typing never walks the character. focusout is read on the next
@@ -66,6 +79,7 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
       el.removeEventListener('pointerdown', onPointerDown, true);
       handle.destroy();
       handleRef.current = null;
+      if (controlsRef) controlsRef.current = null;
     };
   }, [room]);
 
@@ -84,7 +98,7 @@ export function GameView({ room, theme, timeMode, onPeriodChange }: Props) {
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
-      <ChatBar onSend={(text) => handleRef.current?.sendChat(text) ?? false} />
+      {!editing && <ChatBar onSend={(text) => handleRef.current?.sendChat(text) ?? false} />}
     </>
   );
 }

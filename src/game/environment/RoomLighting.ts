@@ -35,8 +35,9 @@ export interface RoomLightingDepths {
  */
 export class RoomLighting {
   private readonly overlay: Phaser.GameObjects.Rectangle;
-  private readonly glows: { image: Phaser.GameObjects.Image; strength: number }[] = [];
-  private readonly screenGlows: Phaser.GameObjects.Image[] = [];
+  private glows: { image: Phaser.GameObjects.Image; strength: number }[] = [];
+  private screenGlows: Phaser.GameObjects.Image[] = [];
+  private sourcesKey = '';
   private ambient = 0xffffff;
   private lamp = 0;
   private screen = 0;
@@ -47,7 +48,7 @@ export class RoomLighting {
     lights: readonly { x: number; y: number; z: number }[],
     screens: readonly ScreenPlacement[],
     center: { x: number; y: number },
-    depth: RoomLightingDepths,
+    private readonly depth: RoomLightingDepths,
   ) {
     ensureGlowTextures(scene);
     this.overlay = scene.add
@@ -55,6 +56,22 @@ export class RoomLighting {
       .setBlendMode(Phaser.BlendModes.MULTIPLY)
       .setDepth(depth.air)
       .setVisible(false);
+    this.setSources(lights, screens);
+  }
+
+  /**
+   * (Re)builds the lamp and screen glows, e.g. after furniture moved. Glow
+   * textures are cached, so this is cheap; current strengths are kept.
+   */
+  setSources(lights: readonly { x: number; y: number; z: number }[], screens: readonly ScreenPlacement[]): void {
+    const key = JSON.stringify([lights, screens]);
+    if (key === this.sourcesKey) return;
+    this.sourcesKey = key;
+    for (const g of this.glows) g.image.destroy();
+    for (const g of this.screenGlows) g.destroy();
+    this.glows = [];
+    this.screenGlows = [];
+    const { scene, depth } = this;
     const add = (image: Phaser.GameObjects.Image, d: number) =>
       image.setBlendMode(Phaser.BlendModes.ADD).setDepth(d).setAlpha(0).setVisible(false);
     for (const l of lights) {
@@ -75,6 +92,7 @@ export class RoomLighting {
       const key = `light:screen:${Object.values(sc).join(':')}`;
       this.screenGlows.push(add(layerImage(scene, key, () => drawScreenLight(sc, COOL)), depth.air + 1));
     }
+    this.set(this.ambient, this.lamp, this.screen);
   }
 
   /** Fades to the look's lighting; `animate` false applies it instantly. */
@@ -103,7 +121,7 @@ export class RoomLighting {
   }
 
   get state() {
-    return { ambient: this.ambient, lamp: this.lamp, screen: this.screen };
+    return { ambient: this.ambient, lamp: this.lamp, screen: this.screen, sources: this.sourcesKey };
   }
 
   private set(ambient: number, lamp: number, screen: number): void {

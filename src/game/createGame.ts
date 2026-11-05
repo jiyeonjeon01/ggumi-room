@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import type { ThemeId } from './art/themes';
 import { createChatMessage, LocalChatTransport, normalizeChat, type ChatTransport } from './chat/chat';
+import { LayoutEditor } from './core/layoutEditor';
+import type { LayoutError, LayoutItem } from './core/placement';
+import { toLayout, toPlacements } from './room/roomData';
 import { TimeOfDayClock, type TimeMode } from './environment/TimeOfDayClock';
 import type { Period } from './environment/timeOfDay';
 import type { RoomData } from './room/roomData';
@@ -14,6 +17,13 @@ export interface GameHandle {
   sendChat(text: string): boolean;
   /** Stops keyboard movement (and key capture) while a text input is focused. */
   setKeyboardEnabled(enabled: boolean): void;
+  /**
+   * Starts decorating the room. Returns the editor holding the draft; the
+   * game draws it live. `onReject` hears about drops that were refused.
+   */
+  startEdit(onReject: (error: LayoutError) => void): LayoutEditor | null;
+  /** Ends decorating: shows `layout` (after a save) or the layout from before editing. */
+  endEdit(layout: readonly LayoutItem[] | null): void;
   destroy(): void;
 }
 
@@ -78,6 +88,23 @@ export function createGame(
     if (s?.sys.isActive()) s.showChat(message);
   });
 
+  // Current room and theme: a saved layout or a theme switch replaces them,
+  // and every scene restart starts from these (never the initial props).
+  let currentRoom = room;
+  let currentTheme = theme;
+  let editing = false;
+  let keyboardWanted = true;
+  const applyKeyboard = () => {
+    // Off while decorating (the editor uses its own keys) or while typing.
+    // The manager also stops calling preventDefault on captured keys, so
+    // W/A/S/D and arrows type normally into inputs.
+    const on = keyboardWanted && !editing;
+    if (game.input.keyboard) game.input.keyboard.enabled = on;
+    scene()?.setKeyboardEnabled(on);
+  };
+  const restart = (s: RoomScene) =>
+    s.scene.restart({ room: currentRoom, theme: currentTheme, player: s.getPlayerState(), period: clock.period, chat: s.getChatState() } satisfies RoomSceneData);
+
   const data: RoomSceneData = { room, theme, period: clock.period };
   game.scene.add(ROOM_SCENE, RoomScene, true, data);
 
@@ -99,15 +126,9 @@ export function createGame(
   return {
     setTheme(next) {
       const s = scene();
-      if (!s || !s.sys.isActive()) return;
-      const restart: RoomSceneData = {
-        room,
-        theme: next,
-        player: s.getPlayerState(),
-        period: clock.period,
-        chat: s.getChatState(),
-      };
-      s.scene.restart(restart);
+      if (!s || !s.sys.isActive() || editing) return;
+      currentTheme = next;
+      restart(s);
     },
     setTimeMode(mode) {
       clock.setMode(mode);
@@ -119,10 +140,30 @@ export function createGame(
       return true;
     },
     setKeyboardEnabled(enabled) {
-      // The manager also stops calling preventDefault on captured keys, so
-      // W/A/S/D and arrows type normally into the chat input.
-      if (game.input.keyboard) game.input.keyboard.enabled = enabled;
-      scene()?.setKeyboardEnabled(enabled);
+      keyboardWanted = enabled;
+      applyKeyboard();
+    },
+    startEdit(onReject) {
+      const s = scene();
+      if (!s || !s.sys.isActive() || editing) return null;
+      editing = true;
+      applyKeyboard();
+      const editor = new LayoutEditor(toLayout(currentRoom.furniture), s.getPlayerPos());
+      s.startEdit(editor, onReject);
+      return editor;
+    },
+    endEdit(layout) {
+      const s = scene();
+      if (!editing) return;
+      editing = false;
+      if (layout) currentRoom = { ...currentRoom, furniture: toPlacements(layout) };
+      if (s?.sys.isActive()) {
+        s.stopEdit();
+        // A restart rebuilds furniture, collision, pathfinding and lights from
+        // the layout, and moves the character off any furniture now under it.
+        restart(s);
+      }
+      applyKeyboard();
     },
     destroy() {
       if (import.meta.env.DEV) delete (window as unknown as { __ggumiroom?: unknown }).__ggumiroom;

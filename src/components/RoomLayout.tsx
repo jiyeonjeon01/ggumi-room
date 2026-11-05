@@ -13,6 +13,8 @@ interface Props {
   badge: number;
   /** Keyboard hints under the game (desktop/tablet only). */
   footer: ReactNode;
+  /** While decorating: tools under the game on tablet/mobile (replaces the hints/tab bar). */
+  editBar?: ReactNode;
 }
 
 /**
@@ -23,7 +25,7 @@ interface Props {
  * - mobile (< 768): bottom tab bar under the game, panels as bottom sheets.
  * The game area flexes; Phaser re-fits the room on resize.
  */
-export function RoomLayout({ children, my, friends, badge, footer }: Props) {
+export function RoomLayout({ children, my, friends, badge, footer, editBar }: Props) {
   const mode = useLayoutMode();
   const [leftCollapsed, setLeftCollapsed] = useStoredFlag('ggumi:ui:left-collapsed', false);
   const [rightCollapsed, setRightCollapsed] = useStoredFlag('ggumi:ui:right-collapsed', false);
@@ -60,7 +62,7 @@ export function RoomLayout({ children, my, friends, badge, footer }: Props) {
           </nav>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
         </div>
-        {footer}
+        {editBar ?? footer}
         {open && (
           <Drawer side={open === 'my' ? 'left' : 'right'} title={open === 'my' ? '내 정보' : '친구'} onClose={close}>
             {open === 'my' ? my(close) : friends(close)}
@@ -73,7 +75,8 @@ export function RoomLayout({ children, my, friends, badge, footer }: Props) {
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-      <nav aria-label="메뉴" className="grid shrink-0 grid-cols-2 gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
+      {editBar}
+      <nav hidden={!!editBar} aria-label="메뉴" className="grid shrink-0 grid-cols-2 gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
         <TabButton icon="👤" label="내 정보" expanded={open === 'my'} onClick={() => setOpen('my')} />
         <TabButton icon="👥" label="친구" badge={badge} expanded={open === 'friends'} onClick={() => setOpen('friends')} />
       </nav>

@@ -45,7 +45,7 @@ function toDetail(status: number, body: unknown): ApiErrorDetail {
   return { message: '요청을 처리하지 못했어요.' };
 }
 
-export async function api<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, retried = false): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, retried = false): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const sentToken = method !== 'GET' ? await csrfToken() : null;
@@ -97,6 +97,8 @@ export interface RoomInfo {
   owner_nickname: string;
   access: 'owner' | 'friend' | 'guest';
   updated_at: string;
+  layout_version: number;
+  items: { type: string; x: number; y: number; facing: number }[];
 }
 
 export interface PublicUser {

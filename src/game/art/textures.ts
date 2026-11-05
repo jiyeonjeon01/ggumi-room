@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { Facing } from '../core/placement';
 import type { FurnitureId } from '../room/furniture';
 import { AVATAR_FRAMES, drawAvatarSheet, drawShadow, FRAME_H, FRAME_W } from './avatarArt';
 import { drawFurniture, furnitureTextureKey } from './furnitureArt';
@@ -38,9 +39,9 @@ export function ensureRoomTextures(scene: Phaser.Scene, w: number, h: number, th
   };
 }
 
-export function ensureFurnitureTexture(scene: Phaser.Scene, id: FurnitureId, theme: RoomTheme): string {
-  const key = furnitureTextureKey(id, theme);
-  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, drawFurniture(id, theme));
+export function ensureFurnitureTexture(scene: Phaser.Scene, id: FurnitureId, theme: RoomTheme, facing: Facing = 0): string {
+  const key = furnitureTextureKey(id, theme, facing);
+  if (!scene.textures.exists(key)) scene.textures.addCanvas(key, drawFurniture(id, theme, facing));
   return key;
 }
 

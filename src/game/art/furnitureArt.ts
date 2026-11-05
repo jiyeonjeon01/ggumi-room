@@ -1,5 +1,6 @@
+import type { Facing } from '../core/placement';
 import { FURNITURE, spriteFrame, type FurnitureId } from '../room/furniture';
-import { mix, PixelCanvas, shade } from './pixelCanvas';
+import { mix, PixelCanvas, shade, type BoxColors } from './pixelCanvas';
 import type { RoomTheme } from './themes';
 
 /**
@@ -9,7 +10,41 @@ import type { RoomTheme } from './themes';
  * Replace with real sprites by loading PNGs under the same texture keys and
  * following the sprite convention in room/furniture.ts.
  */
-type Draw = (pc: PixelCanvas, t: RoomTheme) => void;
+type Draw = (pc: IsoCanvas, t: RoomTheme) => void;
+
+/** The drawing calls furniture art uses, in the piece's local world frame. */
+interface IsoCanvas {
+  isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void;
+  planeRect(plane: 'x' | 'y', c: number, u0: number, u1: number, z0: number, z1: number, color: number, alpha?: number): void;
+  floorRect(x0: number, y0: number, x1: number, y1: number, z: number, color: number): void;
+  at(x: number, y: number, z?: number): { x: number; y: number };
+  stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX?: boolean): void;
+}
+
+/**
+ * Draws a piece turned 90 degrees by swapping world x and y in every call.
+ * Unlike mirroring the finished sprite, the canvas still decides which box
+ * faces are lit (left) or shaded (right) from their real orientation, so the
+ * light keeps coming from the same side.
+ */
+class AxisSwap implements IsoCanvas {
+  constructor(private readonly pc: PixelCanvas) {}
+  isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void {
+    this.pc.isoBox(y, x, z, wy, wx, hz, c);
+  }
+  planeRect(plane: 'x' | 'y', c: number, u0: number, u1: number, z0: number, z1: number, color: number, alpha?: number): void {
+    this.pc.planeRect(plane === 'x' ? 'y' : 'x', c, u0, u1, z0, z1, color, alpha);
+  }
+  floorRect(x0: number, y0: number, x1: number, y1: number, z: number, color: number): void {
+    this.pc.floorRect(y0, x0, y1, x1, z, color);
+  }
+  at(x: number, y: number, z = 0): { x: number; y: number } {
+    return this.pc.at(y, x, z);
+  }
+  stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX = false): void {
+    this.pc.stamp(x, y, rows, palette, !flipX); // flat sprites (leaves) face the other way
+  }
+}
 
 const WHITE = 0xfffbfd;
 
@@ -49,6 +84,17 @@ const ART: Record<FurnitureId, Draw> = {
     pc.planeRect('y', 0.2, 0.96, 1.12, 35, 38, t.accent);
     pc.isoBox(0.55, 0.45, 26, 0.75, 0.25, 1, shade(WHITE, t.outline));
     pc.isoBox(1.55, 0.5, 26, 0.18, 0.18, 6, shade(t.accent, t.outline));
+  },
+
+  chair(pc, t) {
+    // Seat faces -y (toward a desk against the back-right wall); backrest on the +y edge.
+    const legs = shade(mix(t.wood, 0x000000, 0.1), t.outline);
+    const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
+    for (const [x, y] of [[0.1, 0.1], [0.53, 0.1], [0.1, 0.53], [0.53, 0.53]] as const) pc.isoBox(x, y, 0, 0.1, 0.1, 11, legs);
+    pc.isoBox(0.06, 0.06, 11, 0.63, 0.63, 3, wood); // seat board
+    pc.isoBox(0.12, 0.1, 14, 0.5, 0.44, 2, shade(t.fabric, t.outline, mix(t.fabric, WHITE, 0.4))); // cushion
+    pc.isoBox(0.06, 0.57, 14, 0.63, 0.12, 15, wood); // backrest
+    pc.planeRect('y', 0.69, 0.18, 0.57, 19, 26, mix(t.wood, WHITE, 0.25));
   },
 
   bookshelf(pc, t) {
@@ -178,13 +224,13 @@ const LEAVES = [
   '..................',
 ];
 
-export function furnitureTextureKey(id: FurnitureId, theme: RoomTheme): string {
-  return `furniture:${id}:${theme.id}`;
+export function furnitureTextureKey(id: FurnitureId, theme: RoomTheme, facing: Facing = 0): string {
+  return `furniture:${id}:${theme.id}:${facing}`;
 }
 
-export function drawFurniture(id: FurnitureId, theme: RoomTheme): HTMLCanvasElement {
-  const f = spriteFrame(FURNITURE[id]);
+export function drawFurniture(id: FurnitureId, theme: RoomTheme, facing: Facing = 0): HTMLCanvasElement {
+  const f = spriteFrame(FURNITURE[id], facing);
   const pc = new PixelCanvas(f.width, f.height, f.anchorX, f.anchorY);
-  ART[id](pc, theme);
+  ART[id](facing === 0 ? pc : new AxisSwap(pc), theme);
   return pc.toCanvas();
 }

@@ -1,59 +1,58 @@
 import type { ScreenPlacement } from '../art/lampArt';
+import { catalogEntry, FURNITURE_TYPES, size, type Facing, type FurnitureType } from '../core/placement';
 
 /**
- * Furniture catalog: gameplay data only (size, collision). Art lives in
- * art/furnitureArt.ts and is looked up by `id`.
+ * Furniture definitions for rendering. Footprint size, name and collision
+ * come from the shared catalog (shared/furniture.json, also used by the API);
+ * this adds what only the renderer needs: art height and light sources.
+ *
+ * Every piece has two facings. Facing 0 is the drawn orientation; facing 1 is
+ * the same piece turned 90 degrees: footprint w/h swap and the art is redrawn
+ * with world x and y swapped (not mirrored), so lit and shaded faces stay
+ * where the light comes from.
  *
  * Sprite convention (also for future hand-made PNGs) — see spriteFrame():
  * the image is (w + h) * 16 + 2 px wide and (w + h) * 8 + height + 2 px tall,
  * and the floor point under the footprint's back corner (x, y) sits at
- * pixel (h * 16 + 1, height + 1).
+ * pixel (h * 16 + 1, height + 1), using the footprint for that facing.
  */
-export type FurnitureId = 'bed' | 'desk' | 'bookshelf' | 'nightstand' | 'plant' | 'table' | 'cushion' | 'rug';
+export type FurnitureId = FurnitureType;
 
 export interface FurnitureDef {
   id: FurnitureId;
   name: string;
-  /** Footprint in world tiles: w along +x, h along +y. */
+  /** Footprint in world tiles for facing 0: w along +x, h along +y. */
   w: number;
   h: number;
   /** Tallest point of the art above the floor, in pixels. */
   height: number;
   /** Blocks movement. Non-blocking items (rugs) are drawn on the floor layer. */
   blocking: boolean;
-  /** Light source (lamp bulb) in local world tiles / pixel height, if any. */
+  /** Light source (lamp bulb) in local world tiles / pixel height, facing 0. */
   light?: { x: number; y: number; z: number };
-  /** A glowing screen (local world tiles / pixel heights), if any. */
+  /** A glowing screen (local coordinates, facing 0). */
   screen?: ScreenPlacement;
 }
 
-export const FURNITURE: Record<FurnitureId, FurnitureDef> = {
-  bed: { id: 'bed', name: '침대', w: 3, h: 2, height: 34, blocking: true },
-  desk: {
-    id: 'desk',
-    name: '책상',
-    w: 2,
-    h: 1,
-    height: 44,
-    blocking: true,
-    // Matches the monitor in furnitureArt (glass on y = 0.2, desk top at z = 26).
-    screen: { x0: 0.68, x1: 1.42, y: 0.2, z0: 32, z1: 42, surfaceZ: 26, surfaceDepth: 0.7 },
-  },
-  bookshelf: { id: 'bookshelf', name: '책장', w: 1.5, h: 0.75, height: 64, blocking: true },
-  nightstand: {
-    id: 'nightstand',
-    name: '협탁',
-    w: 0.75,
-    h: 0.75,
-    height: 38,
-    blocking: true,
-    light: { x: 0.37, y: 0.37, z: 31 },
-  },
-  plant: { id: 'plant', name: '화분', w: 0.75, h: 0.75, height: 40, blocking: true },
-  table: { id: 'table', name: '좌식 테이블', w: 1.25, h: 1.25, height: 22, blocking: true },
-  cushion: { id: 'cushion', name: '방석', w: 0.75, h: 0.75, height: 8, blocking: false },
-  rug: { id: 'rug', name: '러그', w: 3, h: 2.5, height: 2, blocking: false },
+const RENDER: Record<FurnitureId, Pick<FurnitureDef, 'height' | 'light' | 'screen'>> = {
+  bed: { height: 34 },
+  // Matches the monitor in furnitureArt (glass on y = 0.2, desk top at z = 26).
+  desk: { height: 44, screen: { axis: 'y', u0: 0.68, u1: 1.42, v: 0.2, z0: 32, z1: 42, surfaceZ: 26, surfaceDepth: 0.7 } },
+  chair: { height: 30 },
+  bookshelf: { height: 64 },
+  nightstand: { height: 38, light: { x: 0.37, y: 0.37, z: 31 } },
+  plant: { height: 40 },
+  table: { height: 22 },
+  cushion: { height: 8 },
+  rug: { height: 2 },
 };
+
+export const FURNITURE: Record<FurnitureId, FurnitureDef> = Object.fromEntries(
+  FURNITURE_TYPES.map((id) => {
+    const c = catalogEntry(id);
+    return [id, { id, name: c.name, w: c.w, h: c.h, blocking: c.blocking, ...RENDER[id] }];
+  }),
+) as Record<FurnitureId, FurnitureDef>;
 
 export interface SpriteFrame {
   width: number;
@@ -63,11 +62,27 @@ export interface SpriteFrame {
   anchorY: number;
 }
 
-export function spriteFrame(def: FurnitureDef): SpriteFrame {
+export function spriteFrame(def: FurnitureDef, facing: Facing = 0): SpriteFrame {
+  const { w, h } = size(def.id, facing);
   return {
-    width: Math.ceil((def.w + def.h) * 16) + 2,
-    height: Math.ceil((def.w + def.h) * 8) + def.height + 2,
-    anchorX: Math.round(def.h * 16) + 1,
+    width: Math.ceil((w + h) * 16) + 2,
+    height: Math.ceil((w + h) * 8) + def.height + 2,
+    anchorX: Math.round(h * 16) + 1,
     anchorY: def.height + 1,
   };
+}
+
+/** A lamp's bulb in room coordinates for a placed piece. */
+export function lightOf(def: FurnitureDef, x: number, y: number, facing: Facing) {
+  const l = def.light;
+  if (!l) return null;
+  return facing === 0 ? { x: x + l.x, y: y + l.y, z: l.z } : { x: x + l.y, y: y + l.x, z: l.z };
+}
+
+/** A screen in room coordinates for a placed piece (facing 1 turns it onto the other wall axis). */
+export function screenOf(def: FurnitureDef, x: number, y: number, facing: Facing): ScreenPlacement | null {
+  const s = def.screen;
+  if (!s) return null;
+  if (facing === 0) return { ...s, u0: x + s.u0, u1: x + s.u1, v: y + s.v };
+  return { ...s, axis: s.axis === 'y' ? 'x' : 'y', u0: y + s.u0, u1: y + s.u1, v: x + s.v };
 }

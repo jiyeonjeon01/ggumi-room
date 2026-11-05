@@ -1,5 +1,6 @@
 import type { ThemeId } from '../art/themes';
 import type { Vec2 } from '../core/iso';
+import { DEFAULT_LAYOUT, footprint, type Facing, type LayoutItem } from '../core/placement';
 import { FURNITURE, type FurnitureId } from './furniture';
 
 export interface FurniturePlacement {
@@ -7,7 +8,15 @@ export interface FurniturePlacement {
   /** Back corner of the footprint in world tiles. */
   x: number;
   y: number;
+  /** 0 = as drawn, 1 = turned 90 degrees (footprint w/h swapped). */
+  facing: Facing;
 }
+
+export const toPlacements = (items: readonly LayoutItem[]): FurniturePlacement[] =>
+  items.map((i) => ({ id: i.type, x: i.x, y: i.y, facing: i.facing }));
+
+export const toLayout = (placements: readonly FurniturePlacement[]): LayoutItem[] =>
+  placements.map((p) => ({ type: p.id, x: p.x, y: p.y, facing: p.facing }));
 
 /**
  * A window on one of the two back walls. `u0..u1` is the glass span along the
@@ -47,23 +56,12 @@ export const DEMO_ROOM: RoomData = {
   width: 9,
   height: 8,
   spawn: { x: 7, y: 5.5 },
-  furniture: [
-    { id: 'rug', x: 3.5, y: 3.75 },
-    { id: 'bed', x: 0, y: 0.75 },
-    { id: 'nightstand', x: 0, y: 2.9 },
-    { id: 'bookshelf', x: 3.25, y: 0 },
-    { id: 'desk', x: 6.25, y: 0 },
-    { id: 'plant', x: 8.1, y: 1.2 },
-    { id: 'plant', x: 0.15, y: 7.05 },
-    { id: 'table', x: 4.4, y: 4.4 },
-    { id: 'cushion', x: 4.6, y: 6 },
-  ],
+  // Same default every new room gets on the server (shared/furniture.json).
+  furniture: toPlacements(DEFAULT_LAYOUT),
   windows: [{ wall: 'right', u0: 4.9, u1: 6.1, z0: 40, z1: 72 }],
 };
 
 /** Collision rectangles of all blocking furniture in a room. */
 export function obstaclesOf(room: RoomData) {
-  return room.furniture
-    .filter((f) => FURNITURE[f.id].blocking)
-    .map((f) => ({ x: f.x, y: f.y, w: FURNITURE[f.id].w, h: FURNITURE[f.id].h }));
+  return room.furniture.filter((f) => FURNITURE[f.id].blocking).map((f) => footprint(toLayout([f])[0] as LayoutItem));
 }

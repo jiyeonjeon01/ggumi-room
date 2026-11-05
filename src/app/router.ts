@@ -39,7 +39,21 @@ export function parse(pathname: string, search: string): Route {
   return { name: 'notFound' };
 }
 
+/**
+ * Optional check before leaving the current page inside the app (e.g. unsaved
+ * room edits). Returns false to stay. Reloads/closing the tab use the
+ * browser's own beforeunload prompt instead.
+ */
+let leaveGuard: (() => boolean) | null = null;
+/** Set by navigate() once the guard agreed, so the popstate it fires isn't asked again. */
+let confirmed = false;
+export function setLeaveGuard(guard: (() => boolean) | null): void {
+  leaveGuard = guard;
+}
+
 export function navigate(to: string, opts: { replace?: boolean } = {}): void {
+  if (leaveGuard && to !== window.location.pathname + window.location.search && !leaveGuard()) return;
+  confirmed = true;
   if (opts.replace) window.history.replaceState(null, '', to);
   else window.history.pushState(null, '', to);
   window.dispatchEvent(new PopStateEvent('popstate'));
@@ -48,7 +62,19 @@ export function navigate(to: string, opts: { replace?: boolean } = {}): void {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parse(window.location.pathname, window.location.search));
   useEffect(() => {
-    const onPop = () => setRoute(parse(window.location.pathname, window.location.search));
+    let here = window.location.pathname + window.location.search;
+    const onPop = () => {
+      const next = window.location.pathname + window.location.search;
+      // Browser back/forward while a guard is up: ask, and undo the jump if staying.
+      const ok = confirmed;
+      confirmed = false;
+      if (next !== here && !ok && leaveGuard && !leaveGuard()) {
+        window.history.pushState(null, '', here);
+        return;
+      }
+      here = next;
+      setRoute(parse(window.location.pathname, window.location.search));
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);

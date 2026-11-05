@@ -6,7 +6,7 @@ import { CollisionWorld } from '../core/collision';
 import { sortByDepth, type DepthItem } from '../core/depthSort';
 import { screenToWorld, TILE_H, TILE_W, worldToScreen, type Vec2 } from '../core/iso';
 import { NavGrid } from '../core/pathfinding';
-import { Avatar, type Facing } from '../entities/Avatar';
+import { Avatar, AVATAR_RADIUS, type Facing } from '../entities/Avatar';
 import { AvatarController } from '../entities/AvatarController';
 import { lookFor } from '../environment/look';
 import { RoomLighting } from '../environment/RoomLighting';
@@ -15,8 +15,10 @@ import { BUBBLE_MS, type ChatMessage } from '../chat/chat';
 import { SpeechBubble } from '../chat/SpeechBubble';
 import { WindowLight } from '../environment/WindowLight';
 import { WindowView } from '../environment/WindowView';
-import { FURNITURE, spriteFrame } from '../room/furniture';
-import { obstaclesOf, type RoomData } from '../room/roomData';
+import type { EditItem, LayoutEditor } from '../core/layoutEditor';
+import { footprint, snap, type LayoutError } from '../core/placement';
+import { FURNITURE, lightOf, screenOf, spriteFrame } from '../room/furniture';
+import { obstaclesOf, type FurniturePlacement, type RoomData } from '../room/roomData';
 
 export const ROOM_SCENE = 'room';
 
@@ -68,8 +70,8 @@ const reducedMotion =
 
 class FurnitureItem implements DepthItem {
   constructor(
-    readonly footprint: DepthItem['footprint'],
-    readonly bounds: DepthItem['bounds'],
+    public footprint: DepthItem['footprint'],
+    public bounds: DepthItem['bounds'],
     readonly image: Phaser.GameObjects.Image,
   ) {}
 
@@ -101,6 +103,13 @@ export class RoomScene extends Phaser.Scene {
   private player!: Avatar;
   private controller!: AvatarController;
   private sortables: (Avatar | FurnitureItem)[] = [];
+  /** Furniture sprites by id (edit-session uid while editing). */
+  private furniture = new Map<string, { image: Phaser.GameObjects.Image; sortable: FurnitureItem | null; placement: FurniturePlacement }>();
+  private editor: LayoutEditor | null = null;
+  private editUnsubscribe: (() => void) | null = null;
+  private onEditReject: ((error: LayoutError) => void) | null = null;
+  private drag: { uid: string; grab: Vec2; start: Vec2; cur: Vec2 } | null = null;
+  private selection!: Phaser.GameObjects.Graphics;
   private marker!: Phaser.GameObjects.Image;
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
 
@@ -117,6 +126,10 @@ export class RoomScene extends Phaser.Scene {
     this.shownChat = null;
     this.bubbleTimer = null;
     this.sortables = [];
+    this.furniture = new Map();
+    this.editor = null;
+    this.editUnsubscribe = null;
+    this.drag = null;
     this.windows = [];
     this.nextEnvTick = 0;
   }
@@ -136,15 +149,7 @@ export class RoomScene extends Phaser.Scene {
     this.windows = room.windows.map(
       (win) => new WindowView(this, win, theme, look, { scenery: DEPTH.windowScenery, frame: DEPTH.windowFrame }),
     );
-    const lights = room.furniture.flatMap((f) => {
-      const l = FURNITURE[f.id].light;
-      return l ? [{ x: f.x + l.x, y: f.y + l.y, z: l.z }] : [];
-    });
-    const screens = room.furniture.flatMap((f) => {
-      const sc = FURNITURE[f.id].screen;
-      return sc ? [{ ...sc, x0: f.x + sc.x0, x1: f.x + sc.x1, y: f.y + sc.y }] : [];
-    });
-    this.lighting = new RoomLighting(this, lights, screens, worldToScreen(room.width / 2, room.height / 2), {
+    this.lighting = new RoomLighting(this, [], [], worldToScreen(room.width / 2, room.height / 2), {
       wall: DEPTH.lampWall,
       floor: DEPTH.lampFloor,
       air: DEPTH.lighting,
@@ -153,44 +158,23 @@ export class RoomScene extends Phaser.Scene {
     this.windowLight = new WindowLight(this, room.windows, room, { glow: DEPTH.windowGlow, glass: DEPTH.windowGlass, floor: DEPTH.floorLight, shaft: DEPTH.lightShaft });
     this.windowLight.apply(look, false);
 
-    room.furniture.forEach((placement, i) => {
-      const def = FURNITURE[placement.id];
-      const frame = spriteFrame(def);
-      const s = worldToScreen(placement.x, placement.y);
-      const x = Math.round(s.x);
-      const y = Math.round(s.y);
-      const image = this.add
-        .image(x, y, ensureFurnitureTexture(this, def.id, theme))
-        .setOrigin(frame.anchorX / frame.width, frame.anchorY / frame.height);
-      if (!def.blocking) {
-        // Flat decor (rugs, cushions) is always under characters.
-        image.setDepth(DEPTH.floorDecor + i);
-        return;
-      }
-      const left = x - frame.anchorX;
-      const top = y - frame.anchorY;
-      this.sortables.push(
-        new FurnitureItem(
-          { x: placement.x, y: placement.y, w: def.w, h: def.h },
-          [left, top, left + frame.width, top + frame.height],
-          image,
-        ),
-      );
-    });
+    this.renderFurniture(room.furniture.map((p, i) => ({ uid: `n${i}`, placement: p })));
 
     const world = new CollisionWorld(room.width, room.height, obstaclesOf(room));
     this.world = world;
     ensureAvatarTextures(this);
-    this.player = new Avatar(
-      this,
-      this.initialPlayer?.pos ?? room.spawn,
-      room.owner,
-      this.initialPlayer?.facing,
-    );
+    const nav = new NavGrid(world, AVATAR_RADIUS);
+    // After a layout change the old spot may be inside furniture: step to the nearest free one.
+    let start = this.initialPlayer?.pos ?? room.spawn;
+    if (!world.isFree(start.x, start.y, AVATAR_RADIUS)) {
+      const cell = nav.nearestWalkableCell(start);
+      if (cell) start = nav.cellCenter(cell.c, cell.r);
+    }
+    this.player = new Avatar(this, start, room.owner, this.initialPlayer?.facing);
     this.sortables.push(this.player);
-    const nav = new NavGrid(world, this.player.radius);
 
     this.marker = this.add.image(0, 0, this.createMarkerTexture()).setDepth(DEPTH.marker).setVisible(false);
+    this.selection = this.add.graphics().setDepth(DEPTH.marker - 1);
     this.tweens.add({ targets: this.marker, alpha: 0.35, yoyo: true, repeat: -1, duration: 450 });
     this.controller = new AvatarController(this.player, world, nav, (dest) => this.showMarker(dest));
 
@@ -205,6 +189,7 @@ export class RoomScene extends Phaser.Scene {
       this.bubbleTimer?.remove();
       this.bubbleTimer = null;
       this.bubble.destroy();
+      this.editUnsubscribe?.();
     });
     this.sortDepth();
   }
@@ -215,7 +200,8 @@ export class RoomScene extends Phaser.Scene {
     const k = this.keys;
     const x = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
     const y = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
-    this.controller.update(dt, x, y);
+    // While decorating, the character stays put.
+    if (!this.editor) this.controller.update(dt, x, y);
     this.sortDepth();
     this.bubble.place(this.player.bubbleAnchor, this.cameras.main.worldView);
 
@@ -289,6 +275,9 @@ export class RoomScene extends Phaser.Scene {
       state: this.player.state,
       /** False would mean the player overlaps a wall or furniture. */
       free: this.world.isFree(this.player.pos.x, this.player.pos.y, this.player.radius - 1e-6),
+      furniture: [...this.furniture.values()].map((f) => f.placement),
+      obstacles: this.world.obstacles,
+      editing: this.editor !== null,
       destination: this.controller.destination,
       zoom: this.cameras.main.zoom,
       period: this.period,
@@ -326,8 +315,179 @@ export class RoomScene extends Phaser.Scene {
 
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
       if (!pointer.wasTouch && !pointer.leftButtonDown()) return;
-      this.controller.walkTo(screenToWorld(pointer.worldX, pointer.worldY));
+      if (this.editor) this.editPointerDown(pointer);
+      else this.controller.walkTo(screenToWorld(pointer.worldX, pointer.worldY));
     });
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => this.editPointerMove(pointer));
+    this.input.on(Phaser.Input.Events.POINTER_UP, () => this.editPointerUp());
+    this.input.on(Phaser.Input.Events.GAME_OUT, () => this.editPointerUp());
+  }
+
+  // ---------------------------------------------------------------- furniture
+
+  /**
+   * (Re)creates furniture sprites for a layout and points the lamp/screen
+   * lights at their new spots. Used on load and on every edit change.
+   * Collision and pathfinding are rebuilt when the layout is applied
+   * (scene restart), since the character doesn't move while editing.
+   */
+  private renderFurniture(list: readonly { uid: string; placement: FurniturePlacement }[]): void {
+    const theme = THEMES[this.themeId];
+    for (const f of this.furniture.values()) f.image.destroy();
+    this.furniture.clear();
+    this.sortables = this.sortables.filter((s) => !(s instanceof FurnitureItem));
+    list.forEach(({ uid, placement }, i) => {
+      const def = FURNITURE[placement.id];
+      const frame = spriteFrame(def, placement.facing);
+      const s = worldToScreen(placement.x, placement.y);
+      const x = Math.round(s.x);
+      const y = Math.round(s.y);
+      const image = this.add
+        .image(x, y, ensureFurnitureTexture(this, def.id, theme, placement.facing))
+        .setOrigin(frame.anchorX / frame.width, frame.anchorY / frame.height);
+      let sortable: FurnitureItem | null = null;
+      if (!def.blocking) {
+        // Flat decor (rugs, cushions) is always under characters.
+        image.setDepth(DEPTH.floorDecor + i);
+      } else {
+        const left = x - frame.anchorX;
+        const top = y - frame.anchorY;
+        const rect = footprint({ type: placement.id, x: placement.x, y: placement.y, facing: placement.facing });
+        sortable = new FurnitureItem(rect, [left, top, left + frame.width, top + frame.height], image);
+        this.sortables.push(sortable);
+      }
+      this.furniture.set(uid, { image, sortable, placement });
+    });
+    const placements = list.map((l) => l.placement);
+    this.lighting.setSources(
+      placements.flatMap((p) => lightOf(FURNITURE[p.id], p.x, p.y, p.facing) ?? []),
+      placements.flatMap((p) => screenOf(FURNITURE[p.id], p.x, p.y, p.facing) ?? []),
+    );
+    if (this.player) this.sortDepth();
+  }
+
+  /** Moves one sprite (drag preview) without touching the editor's layout. */
+  private placeSprite(uid: string, x: number, y: number): void {
+    const f = this.furniture.get(uid);
+    if (!f) return;
+    const frame = spriteFrame(FURNITURE[f.placement.id], f.placement.facing);
+    const s = worldToScreen(x, y);
+    const sx = Math.round(s.x);
+    const sy = Math.round(s.y);
+    f.image.setPosition(sx, sy);
+    if (f.sortable) {
+      f.sortable.footprint = { ...f.sortable.footprint, x, y };
+      f.sortable.bounds = [sx - frame.anchorX, sy - frame.anchorY, sx - frame.anchorX + frame.width, sy - frame.anchorY + frame.height];
+    }
+  }
+
+  /**
+   * Starts decorating: the character stops, clicks select/drag furniture.
+   * The editor holds the draft; this scene only draws it. `onReject` is told
+   * when a drop lands somewhere invalid (the piece snaps back).
+   */
+  startEdit(editor: LayoutEditor, onReject: (error: LayoutError) => void): void {
+    this.stopEdit();
+    this.editor = editor;
+    this.onEditReject = onReject;
+    this.controller.stop();
+    this.player.setMotion(0, 0);
+    const draw = () => {
+      this.renderFurniture(
+        editor.items.map((i: EditItem) => ({ uid: i.uid, placement: { id: i.type, x: i.x, y: i.y, facing: i.facing } })),
+      );
+      this.drawSelection(null);
+    };
+    this.editUnsubscribe = editor.subscribe(draw);
+    draw();
+  }
+
+  stopEdit(): void {
+    this.editUnsubscribe?.();
+    this.editUnsubscribe = null;
+    this.editor = null;
+    this.drag = null;
+    this.selection?.clear();
+  }
+
+  /** Where the character stands (furniture can't go there while editing). */
+  getPlayerPos(): Vec2 {
+    return { ...this.player.pos };
+  }
+
+  private floorPoint(pointer: Phaser.Input.Pointer): Vec2 {
+    return screenToWorld(pointer.worldX, pointer.worldY);
+  }
+
+  /** Topmost furniture under the pointer (by visible pixels), tall pieces first, rugs last. */
+  private pick(pointer: Phaser.Input.Pointer): string | null {
+    const order = [...this.furniture.entries()].sort((a, b) => b[1].image.depth - a[1].image.depth);
+    for (const [uid, f] of order) {
+      const img = f.image;
+      const lx = Math.floor(pointer.worldX - (img.x - img.displayOriginX));
+      const ly = Math.floor(pointer.worldY - (img.y - img.displayOriginY));
+      if (lx < 0 || ly < 0 || lx >= img.width || ly >= img.height) continue;
+      if ((this.textures.getPixelAlpha(lx, ly, img.texture.key) ?? 0) > 0) return uid;
+    }
+    return null;
+  }
+
+  private editPointerDown(pointer: Phaser.Input.Pointer): void {
+    const editor = this.editor;
+    if (!editor) return;
+    const uid = this.pick(pointer);
+    editor.select(uid);
+    const item = uid ? editor.items.find((i) => i.uid === uid) : null;
+    if (uid && item) {
+      const p = this.floorPoint(pointer);
+      this.drag = { uid, grab: { x: p.x - item.x, y: p.y - item.y }, start: { x: item.x, y: item.y }, cur: { x: item.x, y: item.y } };
+    }
+    this.drawSelection(null);
+  }
+
+  private editPointerMove(pointer: Phaser.Input.Pointer): void {
+    const { editor, drag } = this;
+    if (!editor || !drag || !pointer.isDown) return;
+    const p = this.floorPoint(pointer);
+    const x = snap(p.x - drag.grab.x);
+    const y = snap(p.y - drag.grab.y);
+    if (x === drag.cur.x && y === drag.cur.y) return;
+    drag.cur = { x, y };
+    this.placeSprite(drag.uid, x, y);
+    this.sortDepth();
+    this.drawSelection(editor.check(drag.uid, x, y) === null ? 'ok' : 'bad');
+  }
+
+  private editPointerUp(): void {
+    const { editor, drag } = this;
+    this.drag = null;
+    if (!editor || !drag) return;
+    if (drag.cur.x === drag.start.x && drag.cur.y === drag.start.y) return;
+    const result = editor.move(drag.uid, drag.cur.x, drag.cur.y);
+    if (!result.ok) {
+      // Snap back to where it was and say why.
+      this.placeSprite(drag.uid, drag.start.x, drag.start.y);
+      this.sortDepth();
+      this.drawSelection(null);
+      this.onEditReject?.(result.error);
+    }
+  }
+
+  /** Outline of the selected piece's footprint on the floor: pink normally, green/red while dragging. */
+  private drawSelection(state: 'ok' | 'bad' | null): void {
+    const g = this.selection;
+    g.clear();
+    for (const f of this.furniture.values()) f.image.setAlpha(1);
+    const sel = this.editor?.selected;
+    if (!sel) return;
+    const pos = this.drag?.uid === sel.uid ? this.drag.cur : sel;
+    const r = footprint({ ...sel, x: pos.x, y: pos.y });
+    const color = state === 'bad' ? 0xe5484d : state === 'ok' ? 0x4caf7a : 0xff7fae;
+    const pts = [worldToScreen(r.x, r.y), worldToScreen(r.x + r.w, r.y), worldToScreen(r.x + r.w, r.y + r.h), worldToScreen(r.x, r.y + r.h)];
+    g.fillStyle(color, 0.25).lineStyle(1, color, 1).beginPath();
+    pts.forEach((p, i) => (i === 0 ? g.moveTo(p.x, p.y) : g.lineTo(p.x, p.y)));
+    g.closePath().fillPath().strokePath();
+    if (state === 'bad') this.furniture.get(sel.uid)?.image.setAlpha(0.6);
   }
 
   private sortDepth(): void {
