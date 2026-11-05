@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --color-cream: #fffaf3;
+  --color-blush-50: #fff5f9;
+  --color-blush-100: #fde7f0;
+  --color-blush-200: #f9cfe0;
+  --color-blush-400: #f08fb5;
+  --color-blush-500: #e5709f;
+  --color-plum-500: #9a6b8c;
+  --color-plum-700: #7a4a68;
+  --color-plum-900: #4a2b40;
+  --color-lavender-100: #efe8ff;
+  --color-lavender-300: #c9b8f5;
+  --color-lavender-500: #9a86dc;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-blush-50);
+  color: var(--color-plum-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Pixel-art canvas must never be smoothed by the browser. */
+canvas {
+  image-rendering: pixelated;
+  display: block;
+}

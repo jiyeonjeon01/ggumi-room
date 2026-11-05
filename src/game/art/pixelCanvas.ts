@@ -1,0 +1,180 @@
+import { TILE_H, TILE_W } from '../core/iso';
+
+/**
+ * Tiny software rasterizer for placeholder pixel art. Everything is drawn
+ * pixel-by-pixel (no anti-aliasing) so it stays crisp at any integer zoom.
+ *
+ * Iso helpers use the same projection as the game (2:1, 32x16 tiles) in a
+ * local frame whose world origin (0,0,0) sits at pixel (ox, oy).
+ */
+export class PixelCanvas {
+  readonly data: Uint8ClampedArray<ArrayBuffer>;
+
+  constructor(
+    readonly width: number,
+    readonly height: number,
+    /** Pixel position of the local world origin (for iso helpers). */
+    readonly ox = 0,
+    readonly oy = 0,
+  ) {
+    this.data = new Uint8ClampedArray(width * height * 4);
+  }
+
+  set(x: number, y: number, color: number, alpha = 255): void {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+    const i = (y * this.width + x) * 4;
+    this.data[i] = (color >> 16) & 0xff;
+    this.data[i + 1] = (color >> 8) & 0xff;
+    this.data[i + 2] = color & 0xff;
+    this.data[i + 3] = alpha;
+  }
+
+  rect(x: number, y: number, w: number, h: number, color: number): void {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) this.set(x + i, y + j, color);
+  }
+
+  /**
+   * Stamps a sprite given as rows of palette characters ('.' = transparent).
+   * This is the format used for hand-made placeholder sprites.
+   */
+  stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX = false): void {
+    rows.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[flipX ? row.length - 1 - i : i] ?? '.';
+        const color = palette[ch];
+        if (ch !== '.' && color !== undefined) this.set(x + i, y + j, color);
+      }
+    });
+  }
+
+  /**
+   * Draws a solid iso box. (x, y) is its back corner in world tiles, (wx, wy)
+   * its footprint, z/hz its bottom height and height in pixels. Boxes must be
+   * drawn back-to-front within one sprite.
+   */
+  isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void {
+    const mask = new Uint8Array(this.width * this.height); // 0 none, 1 top, 2 left, 3 right
+    const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
+    // Screen bounds of the box (local pixels).
+    const left = Math.floor(this.ox + (x - (y + wy)) * hw);
+    const right = Math.ceil(this.ox + (x + wx - y) * hw);
+    const top = Math.floor(this.oy + (x + y) * hh - z - hz);
+    const bottom = Math.ceil(this.oy + (x + wx + y + wy) * hh - z);
+
+    for (let py = Math.max(0, top); py < Math.min(this.height, bottom); py++) {
+      for (let px = Math.max(0, left); px < Math.min(this.width, right); px++) {
+        const sx = (px + 0.5 - this.ox) / hw;
+        const sy = (py + 0.5 - this.oy + z) / hh;
+        // Top face: floor point under the pixel lifted by hz.
+        const ty = sy + hz / hh;
+        const tX = (sx + ty) / 2 - x;
+        const tY = (ty - sx) / 2 - y;
+        let face = 0;
+        if (tX >= 0 && tX <= wx && tY >= 0 && tY <= wy) face = 1;
+        else {
+          // Front-left face (world plane Y = y + wy).
+          const lX = sx + (y + wy) - x;
+          const lz = (lX + x + y + wy) - sy; // height in half-tile units
+          if (lX >= 0 && lX <= wx && lz >= 0 && lz <= hz / hh) face = 2;
+          else {
+            // Front-right face (world plane X = x + wx).
+            const rY = x + wx - sx - y;
+            const rz = (x + wx + rY + y) - sy;
+            if (rY >= 0 && rY <= wy && rz >= 0 && rz <= hz / hh) face = 3;
+          }
+        }
+        if (face) mask[py * this.width + px] = face;
+      }
+    }
+
+    for (let py = Math.max(0, top); py < Math.min(this.height, bottom); py++) {
+      for (let px = Math.max(0, left); px < Math.min(this.width, right); px++) {
+        const face = mask[py * this.width + px];
+        if (!face) continue;
+        const at = (dx: number, dy: number) => {
+          const qx = px + dx;
+          const qy = py + dy;
+          return qx < 0 || qy < 0 || qx >= this.width || qy >= this.height ? 0 : mask[qy * this.width + qx];
+        };
+        const silhouette = !at(1, 0) || !at(-1, 0) || !at(0, 1) || !at(0, -1);
+        if (silhouette) this.set(px, py, c.outline);
+        else if (face === 1 && at(0, 1) !== 1 && c.edge !== undefined) this.set(px, py, c.edge);
+        else this.set(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right);
+      }
+    }
+  }
+
+  /**
+   * Fills a rectangle lying on a vertical plane: plane 'y' is Y = c (faces +y,
+   * drawn spanning X in [u0, u1]); plane 'x' is X = c (faces +x, spanning Y).
+   * Heights z0..z1 in pixels. Used for shelves, windows, wallpaper, etc.
+   * alpha 0 erases (used to cut the glass out of a window frame).
+   */
+  planeRect(plane: 'x' | 'y', c: number, u0: number, u1: number, z0: number, z1: number, color: number, alpha = 255): void {
+    const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
+    for (let px = 0; px < this.width; px++) {
+      const sx = (px + 0.5 - this.ox) / hw;
+      const u = plane === 'y' ? sx + c : c - sx;
+      if (u < u0 || u > u1) continue;
+      const base = this.oy + (c + u) * hh;
+      for (let py = Math.ceil(base - z1 - 0.5); py <= Math.floor(base - z0 - 0.5); py++) this.set(px, py, color, alpha);
+    }
+  }
+
+  /** Fills a rectangle on a horizontal plane at height z (world tiles). */
+  floorRect(x0: number, y0: number, x1: number, y1: number, z: number, color: number): void {
+    const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
+    for (let py = 0; py < this.height; py++) {
+      for (let px = 0; px < this.width; px++) {
+        const sx = (px + 0.5 - this.ox) / hw;
+        const sy = (py + 0.5 - this.oy + z) / hh;
+        const X = (sx + sy) / 2;
+        const Y = (sy - sx) / 2;
+        if (X >= x0 && X <= x1 && Y >= y0 && Y <= y1) this.set(px, py, color);
+      }
+    }
+  }
+
+  /** Pixel position of a local world point (for placing details). */
+  at(x: number, y: number, z = 0): { x: number; y: number } {
+    return {
+      x: Math.round(this.ox + (x - y) * (TILE_W / 2)),
+      y: Math.round(this.oy + (x + y) * (TILE_H / 2) - z),
+    };
+  }
+
+  toCanvas(): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = this.width;
+    canvas.height = this.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) ctx.putImageData(new ImageData(this.data, this.width, this.height), 0, 0);
+    return canvas;
+  }
+}
+
+export interface BoxColors {
+  top: number;
+  left: number;
+  right: number;
+  outline: number;
+  /** Optional highlight line along the front edges of the top face. */
+  edge?: number;
+}
+
+/** Builds box colors from one base color with simple light/shade steps. */
+export function shade(base: number, outline: number, edge?: number): BoxColors {
+  return { top: base, left: mix(base, 0x000000, 0.12), right: mix(base, 0x000000, 0.24), outline, edge };
+}
+
+export function mix(a: number, b: number, t: number): number {
+  const ch = (s: number) => {
+    const ca = (a >> s) & 0xff;
+    const cb = (b >> s) & 0xff;
+    return Math.round(ca + (cb - ca) * t) << s;
+  };
+  return ch(16) | ch(8) | ch(0);
+}
