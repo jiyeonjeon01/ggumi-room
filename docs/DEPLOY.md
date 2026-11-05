@@ -22,6 +22,17 @@
 - Cloudflare에는 소스코드·DB를 올리지 않음. Cloudflare 전용 SDK도 쓰지 않음
 - 나중에 `/api/*`, `/ws/*` → FastAPI, PostgreSQL은 Docker 내부 네트워크 전용
 
+## 폰트 (저장소에 포함하지 않음)
+
+UI와 게임 글자는 **오뮤 다예쁨체**(© omyudiary & VoyagerX)를 씁니다. 라이선스는 웹사이트 사용·서버 임베딩을 허용하지만 **폰트 파일의 수정·무단 재배포는 금지**하므로, 폰트 파일은 공개 Git 저장소에 넣지 않습니다 (`.gitignore`의 `public/fonts/`).
+
+- 필요한 파일: `public/fonts/omyu-pretty.woff2` (운영 PC에만 보관, 백업 별도 관리)
+- 새로 clone한 환경(예: OCI/AWS 서버)에서는 빌드 전에 이 파일을 직접 복사해 넣습니다. 원본은 오뮤다이어리 공식 배포처에서 받습니다.
+- 파일이 없어도 `docker compose build`와 `pnpm build`는 성공합니다. 빌드 로그에 경고가 나오고, 사이트는 시스템 기본 글꼴로 표시되며 브라우저 콘솔에 폰트 404가 보입니다.
+- Docker 빌드는 로컬 폴더(빌드 컨텍스트)를 쓰므로, 운영 PC처럼 파일이 있으면 Git과 상관없이 이미지에 포함됩니다.
+
+**확인 필요 (라이선스)**: 현재 파일은 원본 `omyu pretty.ttf`를 글자 손실 없이 **WOFF2로 변환**한 것입니다 (7.6MB → 3.6MB). 라이선스의 "폰트의 수정 없이 배포되는 형태 그대로 사용"에 형식 변환이 포함되는지는 문구만으로 판단할 수 없어 **저작권자(오뮤다이어리)에게 확인이 필요합니다**. 허용되지 않으면 원본 TTF를 수정 없이 서빙하도록 `src/index.css`의 `@font-face`와 `index.html`의 preload 경로만 바꾸면 됩니다.
+
 ## 포트 규칙
 
 | 서비스 | 개발 (`pnpm dev` 등) | Docker 운영: Windows 호스트 | Docker 내부 (컨테이너) | Cloudflare Tunnel 대상 |

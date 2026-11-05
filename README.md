@@ -43,7 +43,7 @@ docker compose --profile tunnel up -d --build   # 웹 + 터널 (.env 필요)
 
 React 19 · TypeScript 7 (strict) · Vite 8 · Phaser 4 · Tailwind CSS 4 · pnpm
 
-폰트: 오뮤 다예쁨체(omyu pretty) 하나로 페이지 UI와 게임 안 글자(이름표·말풍선)를 모두 씁니다. `public/fonts/omyu-pretty.woff2`(원본 TTF에서 모든 글자를 유지한 채 WOFF2로 변환, 7.6MB → 3.6MB)를 `index.css`의 `@font-face`로 불러오고, 손글씨체라 글자가 작게 보여 `size-adjust: 118%`로 키웠습니다. Phaser 글자는 처음 그릴 때 한 번 래스터화되므로 `main.tsx`에서 폰트 로드(최대 4초)를 기다린 뒤 앱을 시작합니다.
+폰트: 오뮤 다예쁨체(omyu pretty) 하나로 페이지 UI와 게임 안 글자(이름표·말풍선)를 모두 씁니다. 라이선스상 폰트 파일은 **저장소에 포함하지 않습니다**. `public/fonts/omyu-pretty.woff2`를 직접 넣어야 하며, 없으면 시스템 글꼴로 표시됩니다 ([docs/DEPLOY.md](docs/DEPLOY.md#폰트-저장소에-포함하지-않음) 참고). 파일은 `index.css`의 `@font-face`로 불러오고, 손글씨체라 글자가 작게 보여 `size-adjust: 118%`로 키웠습니다. Phaser 글자는 처음 그릴 때 한 번 래스터화되므로 `main.tsx`에서 폰트 로드(최대 4초)를 기다린 뒤 앱을 시작합니다.
 
 - **React**: 페이지 UI(헤더, 테마 전환, 방 이름, 조작 안내). 게임 프레임마다 리렌더링하지 않습니다.
 - **Phaser**: 방 렌더링, 캐릭터 이동·애니메이션, 입력 처리.

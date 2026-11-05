@@ -7,3 +7,7 @@ dist
 .env
 .env.*
 !.env.example
+
+# Font files: licensed for use on our site, but not for redistribution.
+# Keep them out of the public repo; see docs/DEPLOY.md > 폰트.
+public/fonts/

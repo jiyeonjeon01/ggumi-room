@@ -8,6 +8,10 @@ RUN npm install -g pnpm@12.16.1
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
+# The font isn't in the public repo (its license forbids redistribution), so
+# it comes from the local build context. Without it the build still succeeds
+# and the site falls back to system fonts; see docs/DEPLOY.md > 폰트.
+RUN if [ ! -f public/fonts/omyu-pretty.woff2 ]; then       echo "WARNING: public/fonts/omyu-pretty.woff2 not found - building with fallback fonts (see docs/DEPLOY.md)";     fi
 RUN pnpm build
 
 # ---- runtime: static files only, served by nginx as a non-root user ----
