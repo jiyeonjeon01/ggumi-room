@@ -16,7 +16,9 @@ from ..deps import (
     optional_user,
     set_session_cookie,
 )
+from ..layout import default_layout
 from ..models import Room, User
+from .rooms import write_items
 from ..schemas import LoginIdCheckOut, LoginIn, MeOut, SignupIn
 from ..security import hash_password, needs_rehash, verify_password
 from ..validation import (
@@ -79,7 +81,10 @@ def signup(body: SignupIn, request: Request, response: Response, db: Session = D
     except IntegrityError:
         db.rollback()
         raise _bad("login_id", "이미 사용 중인 아이디예요.") from None
-    db.add(Room(owner_id=user.id, name=f"{nickname}의 방"[:30], theme="pastel", is_default=True))
+    room = Room(owner_id=user.id, name=f"{nickname}의 방"[:30], theme="pastel", is_default=True)
+    db.add(room)
+    db.flush()
+    write_items(db, room, default_layout())  # same default as existing rooms got in the migration
     token = create_session(db, user.id)
     db.commit()
 

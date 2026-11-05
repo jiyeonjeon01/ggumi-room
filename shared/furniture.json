@@ -1,0 +1,31 @@
+{
+  "$comment": "Furniture catalog and layout rules shared by the web app (src/game/room) and the API (api/app/layout.py). Sizes are the footprint in tiles for facing 0; facing 1 swaps w and h.",
+  "room": { "width": 9, "height": 8 },
+  "grid": 0.25,
+  "maxItems": 40,
+  "playerRadius": 0.22,
+  "$pocket": "Walkable 0.25-tile cells cut off from the main floor area are allowed only in pockets smaller than this (tiny dead corners); bigger enclosed areas are rejected.",
+  "maxPocketCells": 15,
+  "items": {
+    "bed": { "name": "침대", "w": 3, "h": 2, "blocking": true },
+    "desk": { "name": "책상", "w": 2, "h": 1, "blocking": true },
+    "chair": { "name": "의자", "w": 0.75, "h": 0.75, "blocking": true },
+    "bookshelf": { "name": "책장", "w": 1.5, "h": 0.75, "blocking": true },
+    "nightstand": { "name": "협탁", "w": 0.75, "h": 0.75, "blocking": true },
+    "table": { "name": "좌식 테이블", "w": 1.25, "h": 1.25, "blocking": true },
+    "plant": { "name": "화분", "w": 0.75, "h": 0.75, "blocking": true },
+    "cushion": { "name": "방석", "w": 0.75, "h": 0.75, "blocking": false },
+    "rug": { "name": "러그", "w": 3, "h": 2.5, "blocking": false }
+  },
+  "defaultLayout": [
+    { "type": "rug", "x": 3.5, "y": 3.75, "facing": 0 },
+    { "type": "bed", "x": 0, "y": 0.75, "facing": 0 },
+    { "type": "nightstand", "x": 0, "y": 3, "facing": 0 },
+    { "type": "bookshelf", "x": 3.25, "y": 0, "facing": 0 },
+    { "type": "desk", "x": 6.25, "y": 0, "facing": 0 },
+    { "type": "plant", "x": 8, "y": 1.25, "facing": 0 },
+    { "type": "plant", "x": 0.25, "y": 7, "facing": 0 },
+    { "type": "table", "x": 4.5, "y": 4.5, "facing": 0 },
+    { "type": "cushion", "x": 4.75, "y": 6, "facing": 0 }
+  ]
+}

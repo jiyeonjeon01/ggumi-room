@@ -9,12 +9,14 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
+    SmallInteger,
     String,
     Text,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base, utcnow
@@ -76,8 +78,9 @@ class Room(Base):
     # Who may enter: owner, friends, and users who accepted an invite (room_guests).
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="friends", server_default="friends")
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
-    # Reserved for saved furniture layout (room decorating). Null = the built-in default room.
-    layout: Mapped[dict | None] = mapped_column(JSONB)
+    # Bumped on every saved furniture layout; a save must name the version it
+    # started from, so two editors can't silently overwrite each other.
+    layout_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow, server_default=func.now()
@@ -88,6 +91,30 @@ class Room(Base):
         CheckConstraint("visibility IN ('friends')", name="rooms_visibility_check"),
         # One default room per user.
         Index("rooms_one_default_per_owner", "owner_id", unique=True, postgresql_where=text("is_default")),
+    )
+
+
+class RoomItem(Base):
+    """A piece of furniture placed in a room. Types come from the free catalog
+    (shared/furniture.json); removing one from a room loses nothing, it can be
+    added again. Coordinates are stored in quarter tiles so they are always on
+    the 0.25 grid."""
+
+    __tablename__ = "room_items"
+
+    id: Mapped[uuid.UUID] = _id()
+    room_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    x_q: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    y_q: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    facing: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default="0")
+    # Drawing/saving order within the room (rugs first, as placed).
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        CheckConstraint("facing IN (0, 1)", name="room_items_facing_check"),
+        CheckConstraint("x_q >= 0 AND y_q >= 0", name="room_items_non_negative"),
     )
 
 

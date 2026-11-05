@@ -28,6 +28,28 @@ class LoginIdCheckOut(BaseModel):
     message: str
 
 
+class RoomItemIn(BaseModel):
+    type: str = Field(max_length=32)
+    x: float
+    y: float
+    facing: int
+
+
+class RoomItemOut(BaseModel):
+    type: str
+    x: float
+    y: float
+    facing: int
+
+
+class LayoutIn(BaseModel):
+    """A whole new layout. `layout_version` is the version the editor started from."""
+
+    layout_version: int
+    # Hard cap on the payload; the real limit (catalog maxItems) is checked by layout.validate.
+    items: list[RoomItemIn] = Field(max_length=200)
+
+
 class RoomOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -37,6 +59,8 @@ class RoomOut(BaseModel):
     # How the viewer may be here.
     access: Literal["owner", "friend", "guest"]
     updated_at: datetime
+    layout_version: int
+    items: list[RoomItemOut]
 
 
 class MeOut(BaseModel):

@@ -12,3 +12,8 @@ docker-compose*.yml
 .dockerignore
 docs
 **/*.log
+api/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+api/tests

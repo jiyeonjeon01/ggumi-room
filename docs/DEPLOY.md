@@ -161,6 +161,7 @@ nslookup -type=NS ggumiroom.com 8.8.8.8
 ```
 
 - `api/`: FastAPI, SQLAlchemy 2, Alembic, Pydantic 2, argon2-cffi. 모든 경로가 `/api`로 시작합니다.
+- API 이미지는 **저장소 루트를 빌드 컨텍스트로** 씁니다(`docker-compose.yml`의 `api.build`). 가구 카탈로그 `shared/furniture.json`을 프론트와 함께 쓰기 때문입니다.
 - 컨테이너가 시작할 때 `alembic upgrade head`로 마이그레이션을 적용한 뒤 uvicorn(워커 1개)을 띄웁니다. 워커가 1개인 이유: 요청 제한 카운터가 메모리에 있어서(`api/app/ratelimit.py`). 늘리려면 Redis 등으로 옮깁니다.
 - nginx는 api를 요청 시점에 찾기 때문에, api가 꺼져 있어도 게임은 뜨고 `/api`만 JSON 503을 돌려줍니다.
 - db는 포트를 열지 않고 `backend`(internal) 네트워크에만 붙습니다. 데이터는 `db-data` 볼륨에 남습니다.
@@ -205,6 +206,15 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
    - db·api가 새로 생기고, 첫 실행 때 마이그레이션이 적용됩니다.
 4. 확인: `https://www.ggumiroom.com/api/health` → `{"status":"ok","db":"ok"}`, 가입·로그인 후 새로고침해도 로그인 유지(운영 HTTPS에서 Secure 쿠키), 초대 링크 주소가 `https://www.ggumiroom.com/invite/...`인지.
 5. 되돌리기: 이전 커밋으로 `docker compose --profile tunnel up -d --build web`(프론트 원복), `docker compose stop api db`(데이터는 볼륨에 남음).
+
+### 마이그레이션 기록
+
+| 리비전 | 내용 |
+|---|---|
+| `2ac5ad711c49` | 사용자·세션·방·친구·초대 |
+| `7b1d3e5f9a20` | `room_items`(가구 배치, 0.25칸 단위 정수 좌표) 추가, `rooms.layout_version` 추가, 쓰지 않던 `rooms.layout` 삭제, **기존 방 전부에 기본 배치 9개를 넣음** (신규 가입과 같은 배치) |
+
+`7b1d3e5f9a20`은 데이터를 바꾸므로 운영 반영 전에 반드시 백업합니다. 되돌리면(`alembic downgrade 2ac5ad711c49`) 저장된 가구 배치는 사라집니다.
 
 ### DB 백업·복원
 

@@ -51,7 +51,10 @@ services:
     logging: *logging
 
   api:
-    build: ./api
+    # Repo root as context: the API also needs shared/furniture.json.
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     image: ggumiroom-api:latest
     restart: unless-stopped
     <<: *hardening

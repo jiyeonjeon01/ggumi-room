@@ -1,0 +1,64 @@
+{
+  "$comment": "Layout validation cases run by both test suites (src/game/core/placement.test.ts and api/tests/test_layout.py), so the web app and the server agree. `error` is the first error code expected, or null when valid.",
+  "cases": [
+    { "name": "default layout", "items": "default", "error": null },
+    { "name": "empty room", "items": [], "error": null },
+    { "name": "unknown type", "items": [{ "type": "piano", "x": 1, "y": 1, "facing": 0 }], "error": "unknown_type" },
+    { "name": "bad facing", "items": [{ "type": "chair", "x": 1, "y": 1, "facing": 2 }], "error": "bad_facing" },
+    { "name": "off grid", "items": [{ "type": "chair", "x": 1.1, "y": 1, "facing": 0 }], "error": "off_grid" },
+    { "name": "outside the room", "items": [{ "type": "desk", "x": 7.5, "y": 0, "facing": 0 }], "error": "out_of_bounds" },
+    { "name": "rotated outside", "items": [{ "type": "desk", "x": 0, "y": 7, "facing": 1 }], "error": "out_of_bounds" },
+    { "name": "negative", "items": [{ "type": "chair", "x": -0.25, "y": 0, "facing": 0 }], "error": "out_of_bounds" },
+    {
+      "name": "two beds overlap",
+      "items": [
+        { "type": "bed", "x": 0, "y": 0, "facing": 0 },
+        { "type": "bed", "x": 2, "y": 1, "facing": 0 }
+      ],
+      "error": "overlap"
+    },
+    {
+      "name": "touching edges is fine",
+      "items": [
+        { "type": "desk", "x": 0, "y": 0, "facing": 0 },
+        { "type": "desk", "x": 2, "y": 0, "facing": 0 }
+      ],
+      "error": null
+    },
+    {
+      "name": "furniture on a rug is fine",
+      "items": [
+        { "type": "rug", "x": 2, "y": 2, "facing": 0 },
+        { "type": "table", "x": 3, "y": 3, "facing": 0 },
+        { "type": "cushion", "x": 3, "y": 3, "facing": 0 }
+      ],
+      "error": null
+    },
+    {
+      "name": "wall of furniture splits the room",
+      "items": [
+        { "type": "bed", "x": 0, "y": 3, "facing": 0 },
+        { "type": "bed", "x": 3, "y": 3, "facing": 0 },
+        { "type": "bed", "x": 6, "y": 3, "facing": 0 }
+      ],
+      "error": "blocked_path"
+    },
+    {
+      "name": "corner area closed off",
+      "items": [
+        { "type": "desk", "x": 0, "y": 2, "facing": 0 },
+        { "type": "desk", "x": 2, "y": 0, "facing": 1 }
+      ],
+      "error": "blocked_path"
+    },
+    {
+      "name": "tiny dead corner is fine",
+      "items": [
+        { "type": "desk", "x": 6.25, "y": 0, "facing": 0 },
+        { "type": "plant", "x": 8, "y": 1.25, "facing": 0 }
+      ],
+      "error": null
+    },
+    { "name": "too many", "items": "many:41", "error": "too_many" }
+  ]
+}

@@ -7,9 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
-COPY requirements.txt .
+# Build context is the repo root (the furniture catalog lives in shared/).
+COPY api/requirements.txt .
 RUN pip install -r requirements.txt
-COPY . .
+COPY api/ .
+COPY shared/ ./shared/
 
 # Unprivileged user; the image needs no write access at runtime.
 RUN useradd --system --uid 10001 --no-create-home app
