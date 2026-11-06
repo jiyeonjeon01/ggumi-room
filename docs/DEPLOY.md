@@ -13,7 +13,8 @@
 | 터널 | `ggumiroom-home`, 연결 4개(서울 icn), 경로 `ggumiroom.com`·`www.ggumiroom.com` → `http://web:8080`, 그 외 404 |
 | 캐시 | `/assets/`, `/fonts/`는 Cloudflare 캐시 HIT, HTML은 매번 새로 받음 |
 | API·DB | 2026-11-06 운영 반영 (테스트 기간). web·api·db·cloudflared 4개 컨테이너, 마이그레이션 `7b1d3e5f9a20`, `SIGNUP_CODE`로 가입 제한 중 |
-| 되돌릴 이미지 | `ggumiroom-web:rollback-20261106` (API 반영 전 정적 사이트) |
+| 되돌릴 이미지 | `ggumiroom-web:rollback-20261106` (API 반영 전 정적 사이트), `ggumiroom-web:rollback-20261106-1035`·`ggumiroom-api:rollback-20261106-1035` (가구 15종 반영 직전) |
+| 최근 반영 | 2026-11-06 10:34 가구 15종·마우스 조작·패널 고정·Esc 키 수정. web·api만 교체(약 6초), 마이그레이션 없음 |
 | 백업 | `%USERPROFILE%\ggumiroom-backups\` (저장소 밖), 복원 확인함 |
 
 ```
