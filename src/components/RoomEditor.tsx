@@ -63,6 +63,25 @@ function Catalog({ editor, theme, onNotice, onAdded }: Pick<EditorProps, 'editor
 }
 
 /**
+ * A tool button with the icon above a short one-line label. It never shrinks
+ * below its content or wraps the label (narrow panels used to stack Hangul
+ * one syllable per line).
+ */
+function ToolButton({ icon, label, onClick, disabled = false, compact = false }: { icon: string; label: string; onClick: () => void; disabled?: boolean; compact?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex shrink-0 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-xl bg-white px-2 leading-none text-plum-700 ring-1 ring-blush-200 hover:bg-blush-50 disabled:cursor-not-allowed disabled:text-plum-500/50 ${compact ? 'h-[76px] min-w-[46px] text-[11px]' : 'h-[84px] min-w-[52px] text-xs'}`}
+    >
+      <span aria-hidden className="text-base leading-none">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+/**
  * Moves the selected piece one grid step along the room's axes. The arrows
  * point the way the piece goes on screen (the floor is diamond-shaped).
  */
@@ -94,19 +113,15 @@ export function EditorPanel(props: EditorProps) {
 
       <section aria-label="선택한 가구" className="rounded-2xl bg-white px-3 py-2.5 ring-1 ring-blush-100">
         {sel ? (
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1 space-y-2">
-              <p className="truncate text-plum-700">{catalogEntry(sel.type).name}</p>
-              <div className="flex gap-1">
-                <Button variant="soft" className="px-3 py-1" onClick={() => report(editor.rotate(sel.uid), onNotice)}>
-                  ⟳ 돌리기
-                </Button>
-                <Button variant="soft" className="px-3 py-1" onClick={() => report(editor.remove(sel.uid), onNotice)}>
-                  🗑 빼기
-                </Button>
+          <div className="space-y-2">
+            <p className="truncate text-plum-700">{catalogEntry(sel.type).name}</p>
+            <div className="flex items-center gap-1">
+              <ToolButton icon="⟳" label="돌리기" onClick={() => report(editor.rotate(sel.uid), onNotice)} />
+              <ToolButton icon="🗑" label="빼기" onClick={() => report(editor.remove(sel.uid), onNotice)} />
+              <div className="ml-auto">
+                <NudgePad editor={editor} onNotice={onNotice} />
               </div>
             </div>
-            <NudgePad editor={editor} onNotice={onNotice} />
           </div>
         ) : (
           <p className="py-1 text-sm text-plum-500">방에서 가구를 눌러 골라 주세요.</p>
@@ -150,19 +165,11 @@ export function EditBar(props: EditorProps) {
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-plum-700">{sel ? catalogEntry(sel.type).name : '🛋 가구를 눌러 골라요'}</p>
-          <div className="mt-1 flex flex-wrap gap-1">
-            <Button variant="soft" className="px-3 py-1" onClick={() => setCatalogOpen(true)}>
-              ＋ 가구
-            </Button>
-            <Button variant="soft" className="px-3 py-1" disabled={!editor.canUndo} onClick={() => editor.undo()} aria-label="되돌리기">
-              ↶
-            </Button>
-            <Button variant="soft" className="px-3 py-1" disabled={!sel} onClick={() => sel && report(editor.rotate(sel.uid), onNotice)} aria-label="돌리기">
-              ⟳
-            </Button>
-            <Button variant="soft" className="px-3 py-1" disabled={!sel} onClick={() => sel && report(editor.remove(sel.uid), onNotice)} aria-label="빼기">
-              🗑
-            </Button>
+          <div className="mt-1 flex gap-1">
+            <ToolButton compact icon="＋" label="가구" onClick={() => setCatalogOpen(true)} />
+            <ToolButton compact icon="↶" label="되돌리기" disabled={!editor.canUndo} onClick={() => editor.undo()} />
+            <ToolButton compact icon="⟳" label="돌리기" disabled={!sel} onClick={() => sel && report(editor.rotate(sel.uid), onNotice)} />
+            <ToolButton compact icon="🗑" label="빼기" disabled={!sel} onClick={() => sel && report(editor.remove(sel.uid), onNotice)} />
           </div>
         </div>
         <NudgePad editor={editor} onNotice={onNotice} compact />

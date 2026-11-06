@@ -15,6 +15,8 @@ interface Props {
   footer: ReactNode;
   /** While decorating: tools under the game on tablet/mobile (replaces the hints/tab bar). */
   editBar?: ReactNode;
+  /** Decorating: the left panel holds the editor, so it stays open (desktop). */
+  editing?: boolean;
 }
 
 /**
@@ -25,7 +27,7 @@ interface Props {
  * - mobile (< 768): bottom tab bar under the game, panels as bottom sheets.
  * The game area flexes; Phaser re-fits the room on resize.
  */
-export function RoomLayout({ children, my, friends, badge, footer, editBar }: Props) {
+export function RoomLayout({ children, my, friends, badge, footer, editBar, editing = false }: Props) {
   const mode = useLayoutMode();
   const [leftCollapsed, setLeftCollapsed] = useStoredFlag('ggumi:ui:left-collapsed', false);
   const [rightCollapsed, setRightCollapsed] = useStoredFlag('ggumi:ui:right-collapsed', false);
@@ -39,7 +41,17 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar }: Pr
     return (
       <>
         <div className="flex min-h-0 flex-1 gap-3">
-          <SidePanel side="left" title="내 정보" icon="👤" width="w-[260px]" collapsed={leftCollapsed} onToggle={() => setLeftCollapsed(!leftCollapsed)}>
+          {/* While decorating the panel is shown open without touching the saved
+              collapsed flag, so it goes back to how it was afterwards. */}
+          <SidePanel
+            side="left"
+            title="내 정보"
+            icon="👤"
+            width="w-[260px]"
+            collapsed={leftCollapsed && !editing}
+            locked={editing}
+            onToggle={() => setLeftCollapsed(!leftCollapsed)}
+          >
             {my()}
           </SidePanel>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
@@ -56,7 +68,7 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar }: Pr
     return (
       <>
         <div className="flex min-h-0 flex-1 gap-3">
-          <nav aria-label="메뉴" className="flex w-14 shrink-0 flex-col items-center gap-2 rounded-[28px] bg-white/70 py-3 shadow-sm ring-1 ring-blush-200">
+          <nav aria-label="메뉴" className="flex w-[60px] shrink-0 flex-col items-center gap-2 rounded-[28px] bg-white/70 py-3 shadow-sm ring-1 ring-blush-200">
             <RailButton icon="👤" label="내 정보" expanded={open === 'my'} onClick={() => setOpen(open === 'my' ? null : 'my')} />
             <RailButton icon="👥" label="친구" badge={badge} expanded={open === 'friends'} onClick={() => setOpen(open === 'friends' ? null : 'friends')} />
           </nav>
@@ -105,6 +117,7 @@ function SidePanel({
   width,
   badge = 0,
   collapsed,
+  locked = false,
   onToggle,
   children,
 }: {
@@ -114,6 +127,8 @@ function SidePanel({
   width: string;
   badge?: number;
   collapsed: boolean;
+  /** Can't be collapsed right now (no toggle button). */
+  locked?: boolean;
   onToggle: () => void;
   children: ReactNode;
 }) {
@@ -127,11 +142,10 @@ function SidePanel({
           aria-expanded={false}
           aria-controls={panelId}
           title={`${title} 펼치기`}
-          className="flex flex-col items-center gap-1 rounded-2xl px-1 py-2 text-plum-500 hover:bg-blush-100"
+          className="flex flex-col items-center gap-1 rounded-2xl px-1.5 py-2 text-plum-500 hover:bg-blush-100"
         >
           <span aria-hidden className="text-lg">{icon}</span>
-          <span className="text-[11px] [writing-mode:vertical-rl]">{title}</span>
-          <span className="sr-only">펼치기</span>
+          <span className="sr-only">{title} 펼치기</span>
           {badge > 0 && <Badge count={badge} />}
         </button>
       </aside>
@@ -149,17 +163,19 @@ function SidePanel({
           {title}
           <Badge count={badge} />
         </h2>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded
-          aria-controls={panelId}
-          title={`${title} 접기`}
-          className="rounded-full px-2 py-0.5 text-plum-500 hover:bg-blush-100"
-        >
-          <span aria-hidden>{side === 'left' ? '«' : '»'}</span>
-          <span className="sr-only">접기</span>
-        </button>
+        {!locked && (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded
+            aria-controls={panelId}
+            title={`${title} 접기`}
+            className="rounded-full px-2 py-0.5 text-plum-500 hover:bg-blush-100"
+          >
+            <span aria-hidden>{side === 'left' ? '«' : '»'}</span>
+            <span className="sr-only">접기</span>
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
     </aside>
@@ -173,7 +189,7 @@ function RailButton({ icon, label, badge = 0, expanded, onClick }: { icon: strin
       onClick={onClick}
       aria-expanded={expanded}
       title={label}
-      className={`relative flex w-11 flex-col items-center rounded-2xl py-1.5 text-[11px] ${expanded ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'}`}
+      className={`relative flex w-12 flex-col items-center whitespace-nowrap rounded-2xl py-1.5 text-[11px] leading-tight ${expanded ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'}`}
     >
       <span aria-hidden className="text-lg">{icon}</span>
       {label}
@@ -192,7 +208,7 @@ function TabButton({ icon, label, badge = 0, expanded, onClick }: { icon: string
       type="button"
       onClick={onClick}
       aria-expanded={expanded}
-      className="flex items-center justify-center rounded-full px-3 py-2 text-sm text-plum-500 hover:bg-blush-100"
+      className="flex items-center justify-center whitespace-nowrap rounded-full px-3 py-2 text-sm text-plum-500 hover:bg-blush-100"
     >
       <span aria-hidden className="mr-1">{icon}</span>
       {label}

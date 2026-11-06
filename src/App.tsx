@@ -546,7 +546,7 @@ function RoomScreen({
     // Theme buttons live in the left panel here, not in the header.
     return (
       <Layout>
-        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer} editBar={editBar}>
+        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer} editBar={editBar} editing={editing}>
           {stage}
         </RoomLayout>
       </Layout>
