@@ -17,13 +17,11 @@ ORIGIN = "http://testserver"
 
 @pytest.fixture
 def tc():
-    hub.conns.clear()
-    hub.rooms.clear()
+    hub.reset()
     # One client (one event loop) for every user, so sockets and HTTP calls share the Hub.
     with TestClient(app) as c:
         yield c
-    hub.conns.clear()
-    hub.rooms.clear()
+    hub.reset()
 
 
 class User:

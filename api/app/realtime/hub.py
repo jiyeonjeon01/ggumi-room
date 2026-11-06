@@ -6,6 +6,16 @@ swap the in-memory fan-out (`_send`, room membership) for a shared broker
 (e.g. Redis pub/sub keyed by room and user); the WebSocket endpoint and the
 routers only talk to the Hub methods below.
 
+Presence (friend list dots), per user over all of their connections:
+- online:  connected, and some tab saw real input (keys, pointer, touch,
+           scroll, coming back to the tab; moving or talking in a room) in
+           the last 5 minutes. Heartbeat pings don't count.
+- away:    connected, but no real input for 5 minutes or more.
+- offline: no connection left. After logout at once; after a closed tab or a
+           dropped network only once a short grace period passes without a
+           reconnect (so a reload doesn't flicker).
+Only friends hear about a user's status.
+
 Policy for several tabs/devices of one user:
 - every tab keeps its own connection (presence and, later, messages reach all
   of them);
@@ -26,7 +36,9 @@ from typing import Any
 
 import anyio
 from fastapi import WebSocket
+from starlette.concurrency import run_in_threadpool
 
+from ..config import get_settings
 from ..layout import catalog
 from .geometry import RoomGeometry
 
@@ -36,6 +48,11 @@ STATES = frozenset({"idle", "walk"})
 # Outgoing queue per connection; a client that can't keep up is dropped
 # instead of slowing everyone else down.
 SEND_QUEUE_MAX = 256
+
+AWAY_AFTER_S = get_settings().presence_away_s
+OFFLINE_GRACE_S = get_settings().presence_grace_s
+# Often enough that "away" shows up within a few percent of the threshold.
+SWEEP_EVERY_S = min(15.0, AWAY_AFTER_S / 5)
 
 
 def now() -> float:
@@ -78,6 +95,9 @@ class Conn:
     joins: Bucket = field(default_factory=lambda: Bucket(10, 10.0))
     last_seen: float = field(default_factory=lambda: now())
     session_checked: float = field(default_factory=lambda: now())
+    # Last real user input reported by this tab (not heartbeats).
+    active_at: float = field(default_factory=lambda: now())
+    activities: Bucket = field(default_factory=lambda: Bucket(10, 60.0))
 
 
 @dataclass(eq=False)
@@ -109,11 +129,29 @@ class Hub:
     def __init__(self) -> None:
         self.conns: dict[str, Conn] = {}
         self.rooms: dict[uuid.UUID, RoomState] = {}
+        # Last published status per user (absent = offline).
+        self.presence: dict[uuid.UUID, str] = {}
+        self._offline_timers: dict[uuid.UUID, asyncio.TimerHandle] = {}
+        self._sweeper: asyncio.Task | None = None
+        # Who is friends with whom (DB lookup, set by the WebSocket module).
+        self.friend_ids = lambda user_id: []
+
+    def reset(self) -> None:
+        """Tests only."""
+        for h in self._offline_timers.values():
+            h.cancel()
+        friend_ids = self.friend_ids
+        self.__init__()
+        self.friend_ids = friend_ids
 
     # ------------------------------------------------------------ connections
 
     def register(self, conn: Conn) -> None:
         self.conns[conn.id] = conn
+        self._ensure_sweeper()
+        timer = self._offline_timers.pop(conn.user_id, None)
+        if timer:
+            timer.cancel()
 
     def user_conns(self, user_id: uuid.UUID) -> list[Conn]:
         return [c for c in self.conns.values() if c.user_id == user_id and not c.closed]
@@ -122,6 +160,87 @@ class Hub:
         conn.closed = True
         self.conns.pop(conn.id, None)
         await self.leave_room(conn)
+        if self.user_conns(conn.user_id):
+            await self.refresh_presence(conn.user_id)
+        elif conn.close_code == 4401:
+            await self.refresh_presence(conn.user_id)  # logged out: offline now
+        else:
+            loop = asyncio.get_running_loop()
+            uid = conn.user_id
+            self._offline_timers[uid] = loop.call_later(OFFLINE_GRACE_S, lambda: loop.create_task(self._grace_over(uid)))
+
+    async def _grace_over(self, user_id: uuid.UUID) -> None:
+        self._offline_timers.pop(user_id, None)
+        await self.refresh_presence(user_id)
+
+    # ------------------------------------------------------------ presence
+
+    def status_of(self, user_id: uuid.UUID) -> str:
+        conns = self.user_conns(user_id)
+        if not conns:
+            # Still within the grace period after a drop: keep what friends last saw.
+            return self.presence.get(user_id, "offline") if user_id in self._offline_timers else "offline"
+        latest = max(c.active_at for c in conns)
+        return "online" if now() - latest < AWAY_AFTER_S else "away"
+
+    async def refresh_presence(self, user_id: uuid.UUID) -> None:
+        """Recomputes a user's status and tells their connected friends if it changed."""
+        status = self.status_of(user_id)
+        if status == self.presence.get(user_id, "offline"):
+            return
+        if status == "offline":
+            self.presence.pop(user_id, None)
+        else:
+            self.presence[user_id] = status
+        friends = await run_in_threadpool(self.friend_ids, user_id)
+        msg = {"t": "presence", "user_id": str(user_id), "status": status}
+        for fid in friends:
+            for c in self.user_conns(fid):
+                self.send(c, msg)
+
+    def presence_list(self, friend_ids: list[uuid.UUID]) -> dict[str, str]:
+        return {str(f): self.status_of(f) for f in friend_ids}
+
+    async def activity(self, conn: Conn, idle_ms: Any = None) -> None:
+        """Real input in that tab (idle_ms: how long ago, when reported on connect)."""
+        if not conn.activities.allow():
+            return
+        ago = min(max(float(idle_ms), 0.0), AWAY_AFTER_S * 2 * 1000) / 1000 if _num(idle_ms) else 0.0
+        conn.active_at = max(conn.active_at if idle_ms is None else 0.0, now() - ago)
+        await self.refresh_presence(conn.user_id)
+
+    def touch(self, conn: Conn) -> None:
+        """Moving or talking in a room is real input too (status refresh happens in the sweep or the next activity)."""
+        conn.active_at = now()
+        if self.presence.get(conn.user_id) == "away":
+            asyncio.get_running_loop().create_task(self.refresh_presence(conn.user_id))
+
+    async def sweep(self) -> None:
+        """Turns users who went quiet into "away" (time passes without any event)."""
+        for uid in {c.user_id for c in self.conns.values()}:
+            await self.refresh_presence(uid)
+
+    def _ensure_sweeper(self) -> None:
+        loop = asyncio.get_running_loop()
+        if self._sweeper and not self._sweeper.done() and self._sweeper.get_loop() is loop:
+            return
+
+        async def run() -> None:
+            while True:
+                await asyncio.sleep(SWEEP_EVERY_S)
+                try:
+                    await self.sweep()
+                except Exception:
+                    pass
+
+        self._sweeper = loop.create_task(run())
+
+    async def friends_changed(self, user_ids: list[uuid.UUID]) -> None:
+        """A friendship or request changed: those users refresh their lists and learn each other's status."""
+        for uid in user_ids:
+            friends = await run_in_threadpool(self.friend_ids, uid)
+            for c in self.user_conns(uid):
+                self.send(c, {"t": "friends.changed", "presence": self.presence_list(friends)})
 
     def send(self, conn: Conn, msg: dict[str, Any]) -> None:
         """Queues a message; a full queue means the client stopped reading, so it is dropped."""
@@ -222,6 +341,7 @@ class Hub:
             self.send(conn, {"t": "move.fix", "x": round(member.x, 3), "y": round(member.y, 3)})
             return
         member.x, member.y, member.f, member.s, member.t, member.relaxed = x, y, f, s, t, False
+        self.touch(conn)
         self.broadcast(room, {"t": "move", "id": conn.id, "x": round(x, 3), "y": round(y, 3), "f": f, "s": s}, skip=conn)
 
     def say(self, conn: Conn, text: Any) -> str | None:
@@ -235,6 +355,7 @@ class Hub:
         if not conn.says_fast.allow() or not conn.says.allow():
             return "chat_rate"
         self.broadcast(room, {"t": "say", "id": conn.id, "text": content}, skip=conn)
+        self.touch(conn)
         return None
 
     def layout_changed(self, room_id: uuid.UUID, version: int, items: list[dict[str, Any]]) -> None:
@@ -291,6 +412,10 @@ hub = Hub()
 def notify(fn, *args) -> None:
     """Runs a Hub method from a sync route (worker thread) on the event loop."""
     try:
-        anyio.from_thread.run_sync(fn, *args)
+        if asyncio.iscoroutinefunction(fn):
+            anyio.from_thread.run(fn, *args)
+        else:
+            anyio.from_thread.run_sync(fn, *args)
     except RuntimeError:
-        fn(*args)  # not inside an anyio worker thread (e.g. direct calls in tests)
+        if not asyncio.iscoroutinefunction(fn):
+            fn(*args)  # not inside an anyio worker thread (e.g. direct calls in tests)

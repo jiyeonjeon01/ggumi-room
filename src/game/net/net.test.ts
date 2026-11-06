@@ -182,3 +182,30 @@ describe('LiveConnection', () => {
     expect(timers).toHaveLength(0);
   });
 });
+
+describe('ActivityTracker', () => {
+  it('reports input at most every 30 s and knows how long the user has been idle', async () => {
+    const { ActivityTracker } = await import('../../net/activity');
+    const a = new ActivityTracker(0);
+    expect(a.input(1000)).toBe(true);
+    expect(a.input(5000)).toBe(false); // within 30 s of the last report
+    expect(a.input(31_000)).toBe(true);
+    expect(a.idleMs(91_000)).toBe(60_000);
+    a.reported(100_000);
+    expect(a.input(110_000)).toBe(false);
+  });
+});
+
+describe('ActivityTracker interval', () => {
+  it('reports often enough for a short away threshold', async () => {
+    const { ActivityTracker } = await import('../../net/activity');
+    const a = new ActivityTracker(0);
+    a.setAwayAfter(8);
+    expect(a.input(0)).toBe(true);
+    expect(a.input(1000)).toBe(false);
+    expect(a.input(2000)).toBe(true); // 8 s / 4
+    a.setAwayAfter(300);
+    expect(a.input(20_000)).toBe(false);
+    expect(a.input(32_000)).toBe(true); // capped at 30 s
+  });
+});

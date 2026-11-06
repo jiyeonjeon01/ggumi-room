@@ -177,6 +177,7 @@ def send_request(body: FriendRequestIn, user: User = Depends(current_user), db: 
         existing.status, existing.responded_at = "accepted", utcnow()
         _befriend(db, user.id, target_id)
         db.commit()
+        notify(hub.friends_changed, [user.id, target_id])
         return FriendRequestResultOut(status="accepted", request_id=existing.id)
 
     req = FriendRequest(requester_id=user.id, addressee_id=target_id)
@@ -186,6 +187,7 @@ def send_request(body: FriendRequestIn, user: User = Depends(current_user), db: 
     except IntegrityError:  # a concurrent request for the same pair won
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, detail="이미 처리 중인 친구 요청이 있어요.") from None
+    notify(hub.friends_changed, [target_id])  # their request badge updates right away
     return FriendRequestResultOut(status="pending", request_id=req.id)
 
 
@@ -211,6 +213,7 @@ def accept(request_id: uuid.UUID, user: User = Depends(current_user), db: Sessio
     req.status, req.responded_at = "accepted", utcnow()
     _befriend(db, req.requester_id, req.addressee_id)
     db.commit()
+    notify(hub.friends_changed, [req.requester_id, req.addressee_id])
     return FriendRequestResultOut(status="accepted", request_id=req.id)
 
 
@@ -219,6 +222,7 @@ def decline(request_id: uuid.UUID, user: User = Depends(current_user), db: Sessi
     req = _pending_for(db, request_id, addressee=user.id)
     req.status, req.responded_at = "declined", utcnow()
     db.commit()
+    notify(hub.friends_changed, [req.requester_id])
 
 
 @router.delete("/requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -226,6 +230,7 @@ def cancel(request_id: uuid.UUID, user: User = Depends(current_user), db: Sessio
     req = _pending_for(db, request_id, requester=user.id)  # only the sender
     req.status, req.responded_at = "cancelled", utcnow()
     db.commit()
+    notify(hub.friends_changed, [req.addressee_id])
 
 
 @router.delete("/{friend_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -241,3 +246,4 @@ def unfriend(friend_id: uuid.UUID, user: User = Depends(current_user), db: Sessi
         room = db.scalar(select(Room).where(Room.owner_id == owner.id, Room.is_default)) if owner and visitor else None
         if room and room_access(db, room, visitor) is None:
             notify(hub.drop_from_rooms, visitor.id, owner.id)
+    notify(hub.friends_changed, [user.id, friend_id])

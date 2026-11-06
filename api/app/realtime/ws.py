@@ -18,7 +18,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, WebSocket
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from starlette.concurrency import run_in_threadpool
 
 from .. import ratelimit
@@ -26,14 +26,15 @@ from ..access import room_access
 from ..config import get_settings
 from ..db import SessionLocal, utcnow
 from ..deps import SESSION_COOKIE
-from ..models import Room, User, UserSession
+from ..models import Friendship, Room, User, UserSession
 from ..routers.rooms import _items
 from ..security import token_hash
+from . import hub as hub_mod
 from .hub import Conn, hub, now
 
 MAX_FRAME = 4096
-# Clients ping every 20 s; silence for this long means the connection is gone.
-IDLE_TIMEOUT = 60.0
+# Clients ping every 20 s; two missed pings and a bit means the connection is gone.
+IDLE_TIMEOUT = 45.0
 SESSION_RECHECK_S = 60.0
 MAX_CONNS_PER_USER = 8
 MAX_BAD_FRAMES = 5
@@ -68,6 +69,15 @@ def _room_for(user_id: uuid.UUID, room_id: uuid.UUID) -> tuple[uuid.UUID, list[d
         return room.owner_id, [i.model_dump() for i in _items(db, room)]
 
 
+def friend_ids(user_id: uuid.UUID) -> list[uuid.UUID]:
+    with SessionLocal() as db:
+        rows = db.execute(select(Friendship.user_a_id, Friendship.user_b_id).where(or_(Friendship.user_a_id == user_id, Friendship.user_b_id == user_id))).all()
+    return [b if a == user_id else a for a, b in rows]
+
+
+hub.friend_ids = friend_ids
+
+
 def _client_ip(ws: WebSocket) -> str:
     return ws.headers.get("x-real-ip") or (ws.client.host if ws.client else "unknown")
 
@@ -94,7 +104,21 @@ async def live(ws: WebSocket) -> None:
 
     conn = Conn(ws, user_id, nickname, th)
     hub.register(conn)
-    hub.send(conn, {"t": "welcome", "id": conn.id, "user_id": str(user_id), "nickname": nickname})
+    friends = await run_in_threadpool(friend_ids, user_id)
+    hub.send(
+        conn,
+        {
+            "t": "welcome",
+            "id": conn.id,
+            "user_id": str(user_id),
+            "nickname": nickname,
+            "presence": hub.presence_list(friends),
+            # Clients report activity often enough for this threshold.
+            "away_after_s": hub_mod.AWAY_AFTER_S,
+        },
+    )
+    # Opening the page counts as being here; the client corrects it with its own idle time.
+    await hub.refresh_presence(user_id)
     writer = asyncio.create_task(_writer(conn))
     try:
         await _reader(conn)
@@ -183,6 +207,11 @@ async def _handle(conn: Conn, msg: dict[str, Any]) -> None:
             return
         owner_id, items = found
         await hub.join_room(conn, room_id, owner_id, items, msg.get("x"), msg.get("y"), msg.get("f"))
+    elif t == "activity":
+        await hub.activity(conn, msg.get("idle_ms"))
+    elif t == "presence.sync":
+        friends = await run_in_threadpool(friend_ids, conn.user_id)
+        hub.send(conn, {"t": "presence.list", "presence": hub.presence_list(friends)})
     elif t == "leave":
         await hub.leave_room(conn)
     elif t == "move":

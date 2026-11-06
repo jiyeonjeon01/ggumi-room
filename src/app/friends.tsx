@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError, type Friend, type FriendRequestItem } from '../api/client';
+import { useLive } from './live';
 
 interface Requests {
   incoming: FriendRequestItem[];
@@ -17,7 +18,7 @@ interface FriendsApi {
 
 const FriendsContext = createContext<FriendsApi | null>(null);
 
-/** Refresh interval for the request badge. Polling only; there is no live connection yet. */
+/** Fallback refresh for the request badge; changes also arrive over the realtime connection. */
 const POLL_MS = 60_000;
 
 /**
@@ -27,6 +28,7 @@ const POLL_MS = 60_000;
 export function FriendsProvider({ children }: { children: ReactNode }) {
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [requests, setRequests] = useState<Requests | null>(null);
+  const { live } = useLive();
 
   const reload = useCallback(async () => {
     const [f, r] = await Promise.all([api<Friend[]>('GET', '/api/friends'), api<Requests>('GET', '/api/friends/requests')]);
@@ -46,6 +48,9 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('focus', refresh);
     };
   }, [reload]);
+
+  // A request, acceptance or removal involving me happened elsewhere: refresh now.
+  useEffect(() => live?.on('friends.changed', () => void reload().catch(() => {})), [live, reload]);
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
