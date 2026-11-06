@@ -70,7 +70,7 @@ export function MyPanel({
                   type="button"
                   onClick={() => onTheme(id)}
                   aria-pressed={room.theme === id}
-                  className={`rounded-xl px-3 py-1.5 text-left text-sm transition-colors ${
+                  className={`rounded-xl px-3 py-1.5 text-left text-sm transition-colors pointer-coarse:py-2.5 ${
                     room.theme === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'
                   }`}
                 >

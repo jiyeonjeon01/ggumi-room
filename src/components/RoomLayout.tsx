@@ -251,7 +251,7 @@ function Drawer({ side, title, onClose, children }: { side: 'left' | 'right'; ti
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg text-plum-700">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="닫기" className="rounded-full px-2 text-xl text-plum-500 hover:bg-blush-100">
+          <button type="button" onClick={onClose} aria-label="닫기" className="rounded-full px-2 text-xl text-plum-500 hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10">
             ×
           </button>
         </div>

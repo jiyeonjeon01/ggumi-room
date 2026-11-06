@@ -65,7 +65,7 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
             type="button"
             aria-selected={tab === id}
             onClick={() => setTab(id)}
-            className={`flex-1 rounded-full px-2 py-1.5 text-sm ${tab === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'}`}
+            className={`flex-1 rounded-full px-2 py-1.5 text-sm pointer-coarse:py-2.5 ${tab === id ? 'bg-blush-400 text-white shadow' : 'text-plum-500 hover:bg-blush-100'}`}
           >
             {label}
           </button>
@@ -82,7 +82,7 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={() => (onNavigate?.(), chat.openChat({ id: f.id, nickname: f.nickname }))}
                 aria-label={`${f.nickname}님과 채팅${chat.unread[f.id] ? `, 읽지 않은 메시지 ${chat.unread[f.id]}개` : ''}`}
                 title="채팅"
-                className="relative rounded-full px-2 py-1 text-base hover:bg-blush-100"
+                className="relative rounded-full px-2 py-1 text-base hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10"
               >
                 <span aria-hidden>💬</span>
                 {!!chat.unread[f.id] && (

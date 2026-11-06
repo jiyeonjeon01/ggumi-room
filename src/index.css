@@ -18,6 +18,9 @@
   30% { transform: translateY(-3px); opacity: 1; }
 }
 
+/* Phones held sideways (and other short windows): less chrome around the game. */
+@custom-variant short (@media (max-height: 500px));
+
 @theme {
   --font-sans: "omyu pretty", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --font-mono: "omyu pretty", ui-monospace, monospace;

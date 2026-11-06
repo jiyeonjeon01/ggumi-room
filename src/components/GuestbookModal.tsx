@@ -115,7 +115,7 @@ export function GuestbookModal({ room, onClose, onRoom }: { room: RoomInfo; onCl
                 onChange={(e) => setText(e.target.value)}
                 maxLength={MAX * 2}
                 placeholder="따뜻한 한마디를 남겨 주세요 (100자)"
-                className="w-full resize-none rounded-2xl bg-[#fffaf0] px-3 py-2 text-sm text-plum-700 ring-1 ring-blush-200 outline-none focus:ring-blush-400"
+                className="w-full resize-none rounded-2xl bg-[#fffaf0] px-3 py-2 text-sm text-plum-700 ring-1 ring-blush-200 outline-none focus:ring-blush-400 pointer-coarse:text-base"
               />
               <div className="flex items-center justify-between">
                 <span className={`text-xs ${chars > MAX ? 'text-blush-500' : 'text-plum-500'}`}>
@@ -141,7 +141,7 @@ export function GuestbookModal({ room, onClose, onRoom }: { room: RoomInfo; onCl
                       <b className="font-normal text-blush-500">{e.author.nickname}</b> · <time dateTime={e.created_at}>{stamp(e.created_at)}</time>
                     </span>
                     {e.can_delete && (
-                      <button type="button" onClick={() => void remove(e.id)} aria-label={`${e.author.nickname}님의 글 지우기`} className="shrink-0 rounded-full px-1.5 hover:bg-white/80">
+                      <button type="button" onClick={() => void remove(e.id)} aria-label={`${e.author.nickname}님의 글 지우기`} className="shrink-0 rounded-full px-1.5 hover:bg-white/80 pointer-coarse:min-h-10 pointer-coarse:min-w-10">
                         지우기
                       </button>
                     )}

@@ -14,7 +14,7 @@ export function Button({ variant = 'primary', className = '', ...rest }: ButtonH
     <button
       type="button"
       {...rest}
-      className={`rounded-full px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed ${styles[variant]} ${className}`}
+      className={`rounded-full px-4 py-2 text-sm transition-colors disabled:cursor-not-allowed pointer-coarse:min-h-10 ${styles[variant]} ${className}`}
     />
   );
 }
@@ -78,7 +78,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg text-plum-700">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="닫기" className="rounded-full px-2 text-xl text-plum-500 hover:bg-blush-100">
+          <button type="button" onClick={onClose} aria-label="닫기" className="rounded-full px-2 text-xl text-plum-500 hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10">
             ×
           </button>
         </div>

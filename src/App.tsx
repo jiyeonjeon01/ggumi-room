@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './app/auth';
 import { ChatProvider, useChat } from './app/chat';
 import { LiveProvider } from './app/live';
 import { inviteArrival, shouldOfferFriend, type InviteArrival } from './app/inviteArrival';
+import { useTouchDevice } from './app/layout';
 import { useRoomLive } from './app/roomLive';
 import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
@@ -104,14 +105,14 @@ function Pages() {
 function Layout({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-gradient-to-b from-blush-50 via-cream to-lavender-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8 sm:pt-6">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-2">
         <a href="/" onClick={(e) => (e.preventDefault(), navigate('/'))} className="flex items-center gap-3">
           <Logo />
           <div>
             <h1 className="text-2xl tracking-wide text-plum-700 sm:text-3xl">
               꾸미룸 <span className="ml-1.5 align-middle text-sm tracking-wide text-blush-400">Ggumiroom</span>
             </h1>
-            <p className="text-xs text-plum-500 sm:text-sm">나만의 작은 픽셀 방에 놀러 오세요</p>
+            <p className="text-xs text-plum-500 sm:text-sm short:hidden">나만의 작은 픽셀 방에 놀러 오세요</p>
           </div>
         </a>
         <div className="flex flex-wrap items-center gap-2">
@@ -119,7 +120,7 @@ function Layout({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
           <AccountMenu />
         </div>
       </header>
-      <main className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:px-8 sm:pb-6">{children}</main>
+      <main className="flex min-h-0 flex-1 flex-col gap-3 p-4 sm:px-8 sm:pb-6 short:gap-2 short:py-2">{children}</main>
     </div>
   );
 }
@@ -755,6 +756,7 @@ function RoomScreen({
 }) {
   const [timeMode, setTimeMode] = useState<TimeMode>('auto');
   const [period, setPeriod] = useState<Period | null>(null);
+  const touch = useTouchDevice();
 
   const nav = onTheme && (
     <nav aria-label="방 테마" className="flex gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
@@ -777,7 +779,7 @@ function RoomScreen({
 
   const stage = (
     <section
-      className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
+      className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] short:min-h-[220px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
       style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
     >
       <GameView
@@ -829,7 +831,12 @@ function RoomScreen({
     </section>
   );
 
-  const footer = (
+  const footer = touch ? (
+    <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
+      <Hint keys={['터치']} label="그 자리로 이동" />
+      <Hint keys={['💬']} label="눌러서 채팅" />
+    </footer>
+  ) : (
     <footer className="flex flex-wrap items-center justify-center gap-2 text-xs text-plum-500 sm:text-sm">
       <Hint keys={['클릭']} label="그 자리로 이동" />
       <Hint keys={['↑', '↓', '←', '→']} label="또는" />
