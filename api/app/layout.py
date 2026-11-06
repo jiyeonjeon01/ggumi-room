@@ -29,9 +29,15 @@ def default_layout() -> list[dict[str, Any]]:
     return [dict(i) for i in catalog()["defaultLayout"]]
 
 
+def rotation_of(item_type: str) -> list[int]:
+    """Facings the piece can take (shared/furniture.json "rotation", default [0, 1])."""
+    return list(catalog()["items"][item_type].get("rotation", [0, 1]))
+
+
 def _size(item_type: str, facing: int) -> tuple[float, float]:
+    """Even facings keep w x h, odd facings (a quarter turn) swap them."""
     e = catalog()["items"][item_type]
-    return (e["w"], e["h"]) if facing == 0 else (e["h"], e["w"])
+    return (e["w"], e["h"]) if facing % 2 == 0 else (e["h"], e["w"])
 
 
 def _circle_hits_rect(cx: float, cy: float, r: float, rect: tuple[float, float, float, float]) -> bool:
@@ -95,7 +101,7 @@ def validate(items: list[dict[str, Any]]) -> tuple[str, int | None] | None:
         if t not in c["items"]:
             return "unknown_type", index
         facing = it.get("facing")
-        if facing not in (0, 1) or isinstance(facing, bool):
+        if isinstance(facing, bool) or not isinstance(facing, int) or facing not in rotation_of(t):
             return "bad_facing", index
         x, y = it.get("x"), it.get("y")
         if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v / grid - round(v / grid)) < EPS for v in (x, y)):

@@ -76,7 +76,8 @@ def test_version_conflict_409(make_user):
         ([{"type": "piano", "x": 1, "y": 1, "facing": 0}], "unknown_type"),
         ([{"type": "chair", "x": 1.1, "y": 1, "facing": 0}], "off_grid"),
         ([{"type": "desk", "x": 8, "y": 0, "facing": 0}], "out_of_bounds"),
-        ([{"type": "chair", "x": 1, "y": 1, "facing": 3}], "bad_facing"),
+        ([{"type": "desk", "x": 1, "y": 1, "facing": 3}], "bad_facing"),  # two-way piece
+        ([{"type": "chair", "x": 1, "y": 1, "facing": 4}], "bad_facing"),
         ([{"type": "bed", "x": 0, "y": 0, "facing": 0}, {"type": "bed", "x": 1, "y": 1, "facing": 0}], "overlap"),
         ([{"type": "bed", "x": x, "y": 3, "facing": 0} for x in (0, 3, 6)], "blocked_path"),
         ([{"type": "cushion", "x": 0, "y": 0, "facing": 0}] * 41, "too_many"),
@@ -128,3 +129,20 @@ def test_migration_seeds_existing_rooms_with_the_same_default():
         version = c.execute(text("SELECT layout_version FROM rooms")).scalar()
     assert [{"type": t, "x": x / 4, "y": y / 4, "facing": f} for t, x, y, f in rows] == default_layout()
     assert version == 0
+
+
+def test_four_way_facings_save_and_reload(make_user):
+    a = make_user("꾸미", "ggumi01")
+    info = a.get("/api/rooms/me").json()
+    items = [{"type": "bed", "x": 0, "y": 0.75, "facing": 2}, {"type": "chair", "x": 4, "y": 4, "facing": 3}, {"type": "sofa", "x": 5, "y": 1, "facing": 1}]
+    r = a.put(f"/api/rooms/{info['id']}/items", json={"layout_version": info["layout_version"], "items": items})
+    assert r.status_code == 200, r.text
+    assert [(i["type"], i["facing"]) for i in a.get("/api/rooms/me").json()["items"]] == [("bed", 2), ("chair", 3), ("sofa", 1)]
+
+
+def test_realtime_geometry_uses_the_turned_footprint():
+    from app.realtime.geometry import RoomGeometry
+
+    g = RoomGeometry.from_items([{"type": "bed", "x": 0, "y": 0, "facing": 3}])  # 2 x 3 like facing 1
+    assert g.obstacles == ((0.0, 0.0, 2, 3),)
+    assert not g.is_free(1.0, 2.5, 0.2) and g.is_free(2.6, 1.0, 0.2)

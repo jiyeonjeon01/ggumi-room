@@ -6,6 +6,8 @@ import {
   findSpot,
   footprint,
   FURNITURE_TYPES,
+  nextFacing,
+  rotationOf,
   MAX_ITEMS,
   pathsConnected,
   size,
@@ -57,11 +59,37 @@ describe('placement rules', () => {
       const e = new LayoutEditor([], { x: 7, y: 5.5 }); // empty room: nothing in the way of turning
       expect(e.add(type).ok).toBe(true);
       const uid = e.selected!.uid;
-      expect(e.rotate(uid).ok).toBe(true);
-      expect(e.selected?.facing).toBe(1);
-      expect(e.rotate(uid).ok).toBe(true);
-      expect(e.selected?.facing).toBe(0);
+      const order = rotationOf(type); // the sofa turns four ways, the others two
+      for (const want of [...order.slice(1), order[0]]) {
+        expect(e.rotate(uid).ok).toBe(true);
+        expect(e.selected?.facing).toBe(want);
+      }
       expect(validateLayout(e.layout())).toBeNull();
+    }
+  });
+
+  it('bed, chair and sofa turn four ways and come back; the rest keep two facings', () => {
+    for (const type of ['bed', 'chair', 'sofa'] as const) {
+      const e = new LayoutEditor([], { x: 7, y: 5.5 });
+      expect(e.add(type).ok).toBe(true);
+      const uid = e.selected!.uid;
+      const seen = [e.selected!.facing];
+      for (let i = 0; i < 4; i++) {
+        expect(e.rotate(uid).ok).toBe(true);
+        seen.push(e.selected!.facing);
+      }
+      expect(new Set(seen.slice(0, 4)).size).toBe(4); // four different facings
+      expect(seen[4]).toBe(seen[0]); // a full turn later: back where it started
+      expect(seen.slice(0, 4)).toEqual([...rotationOf(type)]);
+      // Quarter turns swap the footprint, half turns keep it.
+      expect(size(type, 1)).toEqual(size(type, 3));
+      expect(size(type, 0)).toEqual(size(type, 2));
+      e.undo();
+      expect(e.selected?.facing ?? e.items.find((i) => i.uid === uid)?.facing).toBe(seen[3]); // undo steps back one turn
+    }
+    for (const type of FURNITURE_TYPES.filter((t) => !['bed', 'chair', 'sofa'].includes(t))) {
+      expect(rotationOf(type)).toEqual([0, 1]);
+      expect(nextFacing(type, 1)).toBe(0);
     }
   });
 

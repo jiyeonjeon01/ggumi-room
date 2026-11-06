@@ -10,15 +10,16 @@ import type { Vec2 } from './iso';
 import {
   findSpot,
   footprint,
+  type FurnitureType,
   GRID,
+  type LayoutError,
+  type LayoutItem,
+  nextFacing,
   ROOM_H,
   ROOM_W,
   size,
   snap,
   validateLayout,
-  type FurnitureType,
-  type LayoutError,
-  type LayoutItem,
 } from './placement';
 
 export interface EditItem extends LayoutItem {
@@ -103,13 +104,14 @@ export class LayoutEditor {
   }
 
   /**
-   * Turns the piece to its other facing, keeping its center where it was
-   * (snapped), and pulled back inside the room if the new shape sticks out.
+   * Turns the piece one step (90 degrees for four-way pieces, the other facing
+   * for two-way ones), keeping its center where it was (snapped), and pulled
+   * back inside the room if the new shape sticks out.
    */
   rotate(uid: string): EditResult {
     const item = this.find(uid);
     if (!item) return { ok: true };
-    const facing = item.facing === 0 ? 1 : 0;
+    const facing = nextFacing(item.type, item.facing);
     const old = footprint(item);
     const { w, h } = size(item.type, facing);
     const x = Math.min(Math.max(0, snap(old.x + old.w / 2 - w / 2)), ROOM_W - w);

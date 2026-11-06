@@ -4,7 +4,7 @@
     { "name": "default layout", "items": "default", "error": null },
     { "name": "empty room", "items": [], "error": null },
     { "name": "unknown type", "items": [{ "type": "piano", "x": 1, "y": 1, "facing": 0 }], "error": "unknown_type" },
-    { "name": "bad facing", "items": [{ "type": "chair", "x": 1, "y": 1, "facing": 2 }], "error": "bad_facing" },
+    { "name": "bad facing", "items": [{ "type": "chair", "x": 1, "y": 1, "facing": 7 }], "error": "bad_facing" },
     { "name": "off grid", "items": [{ "type": "chair", "x": 1.1, "y": 1, "facing": 0 }], "error": "off_grid" },
     { "name": "outside the room", "items": [{ "type": "desk", "x": 7.5, "y": 0, "facing": 0 }], "error": "out_of_bounds" },
     { "name": "rotated outside", "items": [{ "type": "desk", "x": 0, "y": 7, "facing": 1 }], "error": "out_of_bounds" },
@@ -81,6 +81,19 @@
       "error": "overlap"
     },
     { "name": "rotated wardrobe outside", "items": [{ "type": "wardrobe", "x": 8.5, "y": 0, "facing": 1 }], "error": "out_of_bounds" },
+    {
+      "name": "four-way pieces turned around (facings 2 and 3)",
+      "items": [
+        { "type": "bed", "x": 0, "y": 0.75, "facing": 2 },
+        { "type": "chair", "x": 4, "y": 4, "facing": 3 },
+        { "type": "sofa", "x": 5, "y": 1, "facing": 3 },
+        { "type": "sofa", "x": 2, "y": 5, "facing": 2 }
+      ],
+      "error": null
+    },
+    { "name": "facing 3 swaps the footprint like facing 1", "items": [{ "type": "bed", "x": 7.5, "y": 0, "facing": 3 }], "error": "out_of_bounds" },
+    { "name": "two-way piece can't turn around", "items": [{ "type": "desk", "x": 1, "y": 1, "facing": 2 }], "error": "bad_facing" },
+    { "name": "no fifth facing", "items": [{ "type": "bed", "x": 0, "y": 0, "facing": 4 }], "error": "bad_facing" },
     { "name": "too many", "items": "many:41", "error": "too_many" }
   ]
 }

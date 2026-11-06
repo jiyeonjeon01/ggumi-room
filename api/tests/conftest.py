@@ -72,6 +72,9 @@ class Api:
     def delete(self, url, **kw):
         return self.c.delete(url, **self._h(kw))
 
+    def put(self, url, **kw):
+        return self.c.put(url, **self._h(kw))
+
     def signup(self, nickname="꾸미", login_id="ggumi01", password="cozy-room-2026", confirm=None):
         return self.post(
             "/api/auth/signup",

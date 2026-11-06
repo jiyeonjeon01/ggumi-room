@@ -29,7 +29,7 @@ interface IsoCanvas {
  * light keeps coming from the same side.
  */
 class AxisSwap implements IsoCanvas {
-  constructor(private readonly pc: PixelCanvas) {}
+  constructor(private readonly pc: IsoCanvas) {}
   isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void {
     this.pc.isoBox(y, x, z, wy, wx, hz, c);
   }
@@ -47,6 +47,41 @@ class AxisSwap implements IsoCanvas {
   }
   heightField(x0: number, y0: number, x1: number, y1: number, z: number, hMax: number, h: (X: number, Y: number) => number, c: BoxColors): void {
     this.pc.heightField(y0, x0, y1, x1, z, hMax, (X, Y) => h(Y, X), c);
+  }
+}
+
+/**
+ * Draws a piece turned around (180 degrees) inside its footprint frame of
+ * W x H tiles: every call is mirrored through the frame's center, which is a
+ * real rotation (not a mirror image), so left/right details keep their side
+ * relative to the piece. Needs a depth-tested canvas: parts that were at the
+ * back are now in front, and details on faces now turned away get hidden.
+ * Lit and shaded faces still follow the light (left lit, right shaded).
+ */
+class Turn180 implements IsoCanvas {
+  constructor(
+    private readonly pc: IsoCanvas,
+    private readonly W: number,
+    private readonly H: number,
+  ) {}
+  isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void {
+    this.pc.isoBox(this.W - x - wx, this.H - y - wy, z, wx, wy, hz, c);
+  }
+  planeRect(plane: 'x' | 'y', c: number, u0: number, u1: number, z0: number, z1: number, color: number, alpha?: number): void {
+    const [C, U] = plane === 'y' ? [this.H, this.W] : [this.W, this.H];
+    this.pc.planeRect(plane, C - c, U - u1, U - u0, z0, z1, color, alpha);
+  }
+  floorRect(x0: number, y0: number, x1: number, y1: number, z: number, color: number): void {
+    this.pc.floorRect(this.W - x1, this.H - y1, this.W - x0, this.H - y0, z, color);
+  }
+  at(x: number, y: number, z = 0): { x: number; y: number } {
+    return this.pc.at(this.W - x, this.H - y, z);
+  }
+  stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX = false): void {
+    this.pc.stamp(x, y, rows, palette, !flipX); // flat sprites face the other way round
+  }
+  heightField(x0: number, y0: number, x1: number, y1: number, z: number, hMax: number, h: (X: number, Y: number) => number, c: BoxColors): void {
+    this.pc.heightField(this.W - x1, this.H - y1, this.W - x0, this.H - y0, z, hMax, (X, Y) => h(this.W - X, this.H - Y), c);
   }
 }
 
@@ -350,9 +385,23 @@ export function furnitureTextureKey(id: FurnitureId, theme: RoomTheme, facing: F
   return `furniture:${id}:${theme.id}:${facing}`;
 }
 
+/**
+ * Facing 0: as drawn. 1: world x/y swapped. 2: facing 0 turned around.
+ * 3: facing 1 turned around. Facings 0 and 1 draw exactly as they always
+ * have (painter's order, no depth test), so saved rooms look the same.
+ */
 export function drawFurniture(id: FurnitureId, theme: RoomTheme, facing: Facing = 0): HTMLCanvasElement {
-  const f = spriteFrame(FURNITURE[id], facing);
+  const def = FURNITURE[id];
+  const f = spriteFrame(def, facing);
   const pc = new PixelCanvas(f.width, f.height, f.anchorX, f.anchorY);
-  ART[id](facing === 0 ? pc : new AxisSwap(pc), theme);
+  let canvas: IsoCanvas = pc;
+  if (facing >= 2) {
+    pc.useDepth();
+    // Turn inside the frame the piece occupies after the (optional) axis swap.
+    canvas = facing === 2 ? new Turn180(pc, def.w, def.h) : new AxisSwap(new Turn180(pc, def.h, def.w));
+  } else if (facing === 1) {
+    canvas = new AxisSwap(pc);
+  }
+  ART[id](canvas, theme);
   return pc.toCanvas();
 }

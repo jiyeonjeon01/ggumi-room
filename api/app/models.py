@@ -115,7 +115,8 @@ class RoomItem(Base):
     created_at: Mapped[datetime] = _created()
 
     __table_args__ = (
-        CheckConstraint("facing IN (0, 1)", name="room_items_facing_check"),
+        # Which facings a type may use is checked by the layout rules (shared/furniture.json "rotation").
+        CheckConstraint("facing IN (0, 1, 2, 3)", name="room_items_facing_check"),
         CheckConstraint("x_q >= 0 AND y_q >= 0", name="room_items_non_negative"),
     )
 

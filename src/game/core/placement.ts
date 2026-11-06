@@ -7,7 +7,12 @@ import catalog from '../../../shared/furniture.json';
 import { circleIntersectsRect, type Rect } from './collision';
 import type { Vec2 } from './iso';
 
-export type Facing = 0 | 1;
+/**
+ * 0 = as drawn, 1 = world x/y swapped (a quarter turn for pieces that are
+ * symmetric left-right), 2 and 3 = 0 and 1 turned around (180 degrees).
+ * Most pieces only use 0 and 1; see `rotation` in shared/furniture.json.
+ */
+export type Facing = 0 | 1 | 2 | 3;
 export type FurnitureType = keyof typeof catalog.items;
 
 export interface LayoutItem {
@@ -39,10 +44,27 @@ export function catalogEntry(type: FurnitureType): { name: string; w: number; h:
   return catalog.items[type];
 }
 
-/** Footprint size for a facing: facing 1 is the same piece turned 90 degrees (w and h swap). */
+/** Facings this piece can take, in turning order (one 90-degree turn per step). */
+export function rotationOf(type: FurnitureType): readonly Facing[] {
+  const r = (catalog.items[type] as { rotation?: number[] }).rotation;
+  return (r ?? [0, 1]) as Facing[];
+}
+
+/** The facing after one turn (R, right click or the turn button); four turns come back around. */
+export function nextFacing(type: FurnitureType, facing: Facing): Facing {
+  const order = rotationOf(type);
+  const i = order.indexOf(facing);
+  return order[(i + 1) % order.length] ?? 0;
+}
+
+export function isFacingFor(type: FurnitureType, facing: unknown): facing is Facing {
+  return typeof facing === 'number' && (rotationOf(type) as readonly number[]).includes(facing);
+}
+
+/** Footprint size for a facing: odd facings are turned a quarter (w and h swap); 2 and 3 keep the shape of 0 and 1. */
 export function size(type: FurnitureType, facing: Facing): { w: number; h: number } {
   const { w, h } = catalogEntry(type);
-  return facing === 0 ? { w, h } : { w: h, h: w };
+  return facing % 2 === 0 ? { w, h } : { w: h, h: w };
 }
 
 export function footprint(item: LayoutItem): Rect {
@@ -175,7 +197,7 @@ export function validateLayout(items: readonly { type: string; x: number; y: num
   const blocking: Rect[] = [];
   for (const [index, it] of items.entries()) {
     if (!isFurnitureType(it.type)) return { code: 'unknown_type', index };
-    if (it.facing !== 0 && it.facing !== 1) return { code: 'bad_facing', index };
+    if (!isFacingFor(it.type, it.facing)) return { code: 'bad_facing', index };
     if (!onGrid(it.x) || !onGrid(it.y)) return { code: 'off_grid', index };
     const rect = footprint(it as LayoutItem);
     if (rect.x < -EPS || rect.y < -EPS || rect.x + rect.w > ROOM_W + EPS || rect.y + rect.h > ROOM_H + EPS) {

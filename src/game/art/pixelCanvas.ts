@@ -9,6 +9,12 @@ import { TILE_H, TILE_W } from '../core/iso';
  */
 export class PixelCanvas {
   readonly data: Uint8ClampedArray<ArrayBuffer>;
+  /**
+   * Optional depth buffer (see useDepth). Depth is X + Y of the visible world
+   * point: along any screen pixel's view ray, larger X + Y is nearer the
+   * viewer. Without it, later drawing simply covers earlier drawing.
+   */
+  private depth: Float32Array | null = null;
 
   constructor(
     readonly width: number,
@@ -18,6 +24,28 @@ export class PixelCanvas {
     readonly oy = 0,
   ) {
     this.data = new Uint8ClampedArray(width * height * 4);
+  }
+
+  /**
+   * Turns on depth testing: a pixel is only drawn if nothing nearer is there
+   * yet (coplanar details drawn later still win). Used for turned-around
+   * furniture, where the drawing order written for the front view would let
+   * far parts cover near ones, and details on faces now turned away vanish.
+   */
+  useDepth(): void {
+    this.depth = new Float32Array(this.width * this.height).fill(-Infinity);
+  }
+
+  /** set() with a depth test when depth testing is on. */
+  private plot(x: number, y: number, color: number, d: number, alpha = 255): void {
+    const z = this.depth;
+    if (z) {
+      if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
+      const i = y * this.width + x;
+      if (d < (z[i] as number) - DEPTH_EPS) return;
+      z[i] = Math.max(z[i] as number, d);
+    }
+    this.set(x, y, color, alpha);
   }
 
   set(x: number, y: number, color: number, alpha = 255): void {
@@ -54,6 +82,7 @@ export class PixelCanvas {
    */
   isoBox(x: number, y: number, z: number, wx: number, wy: number, hz: number, c: BoxColors): void {
     const mask = new Uint8Array(this.width * this.height); // 0 none, 1 top, 2 left, 3 right
+    const depth = this.depth ? new Float32Array(this.width * this.height) : null;
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
     // Screen bounds of the box (local pixels).
@@ -84,7 +113,11 @@ export class PixelCanvas {
             if (rY >= 0 && rY <= wy && rz >= 0 && rz <= hz / hh) face = 3;
           }
         }
-        if (face) mask[py * this.width + px] = face;
+        if (face) {
+          mask[py * this.width + px] = face;
+          // X + Y of the visible point: top face, plane Y = y + wy, or plane X = x + wx.
+          if (depth) depth[py * this.width + px] = face === 1 ? ty : face === 2 ? sx + 2 * (y + wy) : 2 * (x + wx) - sx;
+        }
       }
     }
 
@@ -98,9 +131,10 @@ export class PixelCanvas {
           return qx < 0 || qy < 0 || qx >= this.width || qy >= this.height ? 0 : mask[qy * this.width + qx];
         };
         const silhouette = !at(1, 0) || !at(-1, 0) || !at(0, 1) || !at(0, -1);
-        if (silhouette) this.set(px, py, c.outline);
-        else if (face === 1 && at(0, 1) !== 1 && c.edge !== undefined) this.set(px, py, c.edge);
-        else this.set(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right);
+        const d = depth ? (depth[py * this.width + px] as number) : 0;
+        if (silhouette) this.plot(px, py, c.outline, d);
+        else if (face === 1 && at(0, 1) !== 1 && c.edge !== undefined) this.plot(px, py, c.edge, d);
+        else this.plot(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right, d);
       }
     }
   }
@@ -119,7 +153,8 @@ export class PixelCanvas {
       const u = plane === 'y' ? sx + c : c - sx;
       if (u < u0 || u > u1) continue;
       const base = this.oy + (c + u) * hh;
-      for (let py = Math.ceil(base - z1 - 0.5); py <= Math.floor(base - z0 - 0.5); py++) this.set(px, py, color, alpha);
+      const d = plane === 'y' ? u + c : c + u;
+      for (let py = Math.ceil(base - z1 - 0.5); py <= Math.floor(base - z0 - 0.5); py++) this.plot(px, py, color, d, alpha);
     }
   }
 
@@ -133,7 +168,7 @@ export class PixelCanvas {
         const sy = (py + 0.5 - this.oy + z) / hh;
         const X = (sx + sy) / 2;
         const Y = (sy - sx) / 2;
-        if (X >= x0 && X <= x1 && Y >= y0 && Y <= y1) this.set(px, py, color);
+        if (X >= x0 && X <= x1 && Y >= y0 && Y <= y1) this.plot(px, py, color, X + Y);
       }
     }
   }
@@ -149,6 +184,7 @@ export class PixelCanvas {
     const hw = TILE_W / 2;
     const hh = TILE_H / 2;
     const mask = new Uint8Array(this.width * this.height);
+    const depth = this.depth ? new Float32Array(this.width * this.height) : null;
     const left = Math.max(0, Math.floor(this.ox + (x0 - y1) * hw));
     const right = Math.min(this.width, Math.ceil(this.ox + (x1 - y0) * hw));
     const top = Math.max(0, Math.floor(this.oy + (x0 + y0) * hh - z - hMax));
@@ -172,6 +208,7 @@ export class PixelCanvas {
           let face = 1;
           if (wall || Math.hypot(gx, gy) > 40) face = -gy >= -gx ? 2 : 3;
           mask[py * this.width + px] = face;
+          if (depth) depth[py * this.width + px] = X + Y;
           break;
         }
       }
@@ -186,9 +223,10 @@ export class PixelCanvas {
           return qx < 0 || qy < 0 || qx >= this.width || qy >= this.height ? 0 : mask[qy * this.width + qx];
         };
         const silhouette = !at(1, 0) || !at(-1, 0) || !at(0, 1) || !at(0, -1);
-        if (silhouette) this.set(px, py, c.outline);
-        else if (face === 1 && (at(0, 1) ?? 0) > 1 && c.edge !== undefined) this.set(px, py, c.edge);
-        else this.set(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right);
+        const d = depth ? (depth[py * this.width + px] as number) : 0;
+        if (silhouette) this.plot(px, py, c.outline, d);
+        else if (face === 1 && (at(0, 1) ?? 0) > 1 && c.edge !== undefined) this.plot(px, py, c.edge, d);
+        else this.plot(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right, d);
       }
     }
   }
@@ -210,6 +248,9 @@ export class PixelCanvas {
     return canvas;
   }
 }
+
+/** Coplanar surfaces (a detail painted on a face) compare equal within this. */
+const DEPTH_EPS = 0.03;
 
 export interface BoxColors {
   top: number;

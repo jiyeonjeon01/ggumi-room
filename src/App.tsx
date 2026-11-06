@@ -20,7 +20,7 @@ import { isWebGLAvailable, type MoveState } from './game/createGame';
 import type { TimeMode } from './game/environment/TimeOfDayClock';
 import { PERIOD_LABEL, PERIODS, type Period } from './game/environment/timeOfDay';
 import type { LayoutEditor } from './game/core/layoutEditor';
-import { isFurnitureType, LAYOUT_ERROR_TEXT, type Facing, type LayoutItem } from './game/core/placement';
+import { isFacingFor, isFurnitureType, LAYOUT_ERROR_TEXT, type Facing, type LayoutItem } from './game/core/placement';
 import { DEMO_ROOM, toPlacements, type RoomData } from './game/room/roomData';
 import { finishAuth, LoginPage, SignupPage } from './pages/AuthPage';
 import { InvitePage } from './pages/InvitePage';
@@ -511,7 +511,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
 
 /** Server items -> editor layout (unknown types from a newer catalog are skipped). */
 function layoutFromServer(items: RoomInfo['items']): LayoutItem[] {
-  return items.flatMap((i) => (isFurnitureType(i.type) ? [{ type: i.type, x: i.x, y: i.y, facing: (i.facing === 1 ? 1 : 0) as Facing }] : []));
+  return items.flatMap((i) => (isFurnitureType(i.type) ? [{ type: i.type, x: i.x, y: i.y, facing: isFacingFor(i.type, i.facing) ? i.facing : (0 as Facing) }] : []));
 }
 
 function RoomScreen({

@@ -78,17 +78,40 @@ export function spriteFrame(def: FurnitureDef, facing: Facing = 0): SpriteFrame 
   };
 }
 
+/**
+ * A point given in the piece's facing-0 frame, placed for a facing (the same
+ * transforms the art uses): 1 swaps x/y, 2 turns it around in the w x h
+ * frame, 3 swaps and then turns around in the h x w frame.
+ */
+export function localPoint(def: FurnitureDef, facing: Facing, px: number, py: number): { x: number; y: number } {
+  switch (facing) {
+    case 1:
+      return { x: py, y: px };
+    case 2:
+      return { x: def.w - px, y: def.h - py };
+    case 3:
+      return { x: def.h - py, y: def.w - px };
+    default:
+      return { x: px, y: py };
+  }
+}
+
 /** A lamp's bulb in room coordinates for a placed piece. */
 export function lightOf(def: FurnitureDef, x: number, y: number, facing: Facing) {
   const l = def.light;
   if (!l) return null;
-  return facing === 0 ? { x: x + l.x, y: y + l.y, z: l.z } : { x: x + l.y, y: y + l.x, z: l.z };
+  const p = localPoint(def, facing, l.x, l.y);
+  return { x: x + p.x, y: y + p.y, z: l.z };
 }
 
-/** A screen in room coordinates for a placed piece (facing 1 turns it onto the other wall axis). */
+/**
+ * A screen in room coordinates for a placed piece (facing 1 turns it onto the
+ * other wall axis). Only two-way pieces have screens (the desk); a screen
+ * turned around would face the wall, so facings 2 and 3 have none.
+ */
 export function screenOf(def: FurnitureDef, x: number, y: number, facing: Facing): ScreenPlacement | null {
   const s = def.screen;
-  if (!s) return null;
+  if (!s || facing >= 2) return null;
   if (facing === 0) return { ...s, u0: x + s.u0, u1: x + s.u1, v: y + s.v };
   return { ...s, axis: s.axis === 'y' ? 'x' : 'y', u0: y + s.u0, u1: y + s.u1, v: x + s.v };
 }

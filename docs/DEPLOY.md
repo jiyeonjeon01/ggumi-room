@@ -242,6 +242,7 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
 | `2ac5ad711c49` | 사용자·세션·방·친구·초대 |
 | `7b1d3e5f9a20` | `room_items`(가구 배치, 0.25칸 단위 정수 좌표) 추가, `rooms.layout_version` 추가, 쓰지 않던 `rooms.layout` 삭제, **기존 방 전부에 기본 배치 9개를 넣음** (신규 가입과 같은 배치) |
 | `ca9664530522` | 1:1 채팅: `conversations`, `messages` **새 테이블만 추가** (기존 데이터 변경 없음, 되돌리면 이 두 테이블만 삭제) |
+| `4048ffc5e5bf` | `room_items.facing` 제약을 `IN (0,1)`에서 `IN (0,1,2,3)`으로 넓힘 (기존 값 변경 없음). 되돌리면 2→0, 3→1로 접은 뒤 제약 복원 |
 
 `7b1d3e5f9a20`은 데이터를 바꾸므로 운영 반영 전에 반드시 백업합니다. 되돌리면(`alembic downgrade 2ac5ad711c49`) 저장된 가구 배치는 사라집니다.
 
