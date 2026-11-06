@@ -3,7 +3,7 @@ import type { Facing } from '../core/placement';
 import type { FurnitureId } from '../room/furniture';
 import { AVATAR_FRAMES, drawAvatarSheet, drawShadow, FRAME_H, FRAME_W } from './avatarArt';
 import { drawFurniture, furnitureTextureKey } from './furnitureArt';
-import { drawFloor, drawWalls, type LayerArt } from './roomArt';
+import { drawFloor, drawWalls, type LayerArt, type WallDecor } from './roomArt';
 import type { RoomTheme } from './themes';
 
 /**
@@ -32,10 +32,10 @@ function ensureLayer(scene: Phaser.Scene, key: string, draw: () => LayerArt): { 
   return { key, art };
 }
 
-export function ensureRoomTextures(scene: Phaser.Scene, w: number, h: number, theme: RoomTheme): RoomLayerTextures {
+export function ensureRoomTextures(scene: Phaser.Scene, w: number, h: number, theme: RoomTheme, decor: WallDecor = 'personal'): RoomLayerTextures {
   return {
     floor: ensureLayer(scene, `floor:${theme.id}:${w}x${h}`, () => drawFloor(w, h, theme)),
-    walls: ensureLayer(scene, `walls:${theme.id}:${w}x${h}`, () => drawWalls(w, h, theme)),
+    walls: ensureLayer(scene, `walls:${theme.id}:${w}x${h}:${decor}`, () => drawWalls(w, h, theme, decor)),
   };
 }
 

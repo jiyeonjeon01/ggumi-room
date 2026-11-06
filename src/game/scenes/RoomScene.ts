@@ -166,7 +166,7 @@ export class RoomScene extends Phaser.Scene {
     const theme = THEMES[this.themeId];
     this.cameras.main.setBackgroundColor(theme.backdrop);
 
-    const layers = ensureRoomTextures(this, room.width, room.height, theme);
+    const layers = ensureRoomTextures(this, room.width, room.height, theme, room.decor);
     const origin = (art: { canvas: HTMLCanvasElement; anchorX: number; anchorY: number }) =>
       [art.anchorX / art.canvas.width, art.anchorY / art.canvas.height] as const;
     this.add.image(0, 0, layers.floor.key).setOrigin(...origin(layers.floor.art)).setDepth(DEPTH.floor);

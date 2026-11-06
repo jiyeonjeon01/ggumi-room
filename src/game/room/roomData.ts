@@ -1,3 +1,5 @@
+import catalog from '../../../shared/furniture.json';
+import type { WallDecor } from '../art/roomArt';
 import type { ThemeId } from '../art/themes';
 import type { Vec2 } from '../core/iso';
 import { DEFAULT_LAYOUT, footprint, type Facing, type LayoutItem } from '../core/placement';
@@ -46,6 +48,32 @@ export interface RoomData {
   spawn: Vec2;
   furniture: FurniturePlacement[];
   windows: WindowPlacement[];
+  /** Wall decorations (personal room unless a template says otherwise). */
+  decor?: WallDecor;
+}
+
+interface TemplateJson {
+  name: string;
+  width: number;
+  height: number;
+  spawn: Vec2;
+  decor: WallDecor;
+  windows: WindowPlacement[];
+  layout: { type: string; x: number; y: number; facing: number }[];
+}
+
+/** A room built from a catalog template (shared/furniture.json "templates"), e.g. the party lounge. */
+export function roomFromTemplate(name: 'lounge', base: Pick<RoomData, 'id' | 'name' | 'owner' | 'theme'>): RoomData {
+  const t = (catalog as unknown as { templates: Record<string, TemplateJson> }).templates[name] as TemplateJson;
+  return {
+    ...base,
+    width: t.width,
+    height: t.height,
+    spawn: { ...t.spawn },
+    windows: t.windows.map((w) => ({ ...w })),
+    decor: t.decor,
+    furniture: t.layout.map((i) => ({ id: i.type as FurniturePlacement['id'], x: i.x, y: i.y, facing: i.facing as Facing })),
+  };
 }
 
 export const DEMO_ROOM: RoomData = {

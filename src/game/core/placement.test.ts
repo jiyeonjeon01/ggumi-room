@@ -6,6 +6,8 @@ import {
   findSpot,
   footprint,
   FURNITURE_TYPES,
+  ROOM_H,
+  ROOM_W,
   nextFacing,
   rotationOf,
   MAX_ITEMS,
@@ -164,5 +166,18 @@ describe('LayoutEditor', () => {
     e.nudge(uidOf(e, 'table'), 0, -1);
     e.undo();
     expect(calls).toBe(3);
+  });
+});
+
+describe('room templates', () => {
+  it('the party lounge is bigger, its fixed layout follows the same rules, and the spawn point is free', async () => {
+    const { roomFromTemplate } = await import('../room/roomData');
+    const lounge = roomFromTemplate('lounge', { id: 'p', name: '파티', owner: '꾸미', theme: 'pastel' });
+    expect(lounge.width * lounge.height).toBeGreaterThan(ROOM_W * ROOM_H);
+    const items = lounge.furniture.map((f) => ({ type: f.id, x: f.x, y: f.y, facing: f.facing }));
+    expect(validateLayout(items, lounge.spawn, { w: lounge.width, h: lounge.height })).toBeNull();
+    // The same pieces would not fit the personal room's bounds.
+    expect(validateLayout(items)?.code).toBe('out_of_bounds');
+    expect(lounge.decor).toBe('lounge');
   });
 });

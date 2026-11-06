@@ -36,5 +36,43 @@
     { "type": "plant", "x": 0.25, "y": 7, "facing": 0 },
     { "type": "table", "x": 4.5, "y": 4.5, "facing": 0 },
     { "type": "cushion", "x": 4.75, "y": 6, "facing": 0 }
-  ]
+  ],
+  "templates": {
+    "lounge": {
+      "name": "파티 라운지",
+      "width": 14,
+      "height": 11,
+      "spawn": { "x": 7, "y": 8 },
+      "decor": "lounge",
+      "windows": [
+        { "wall": "right", "u0": 2.4, "u1": 3.6, "z0": 40, "z1": 72 },
+        { "wall": "right", "u0": 5.6, "u1": 6.8, "z0": 40, "z1": 72 },
+        { "wall": "left", "u0": 6.4, "u1": 7.6, "z0": 40, "z1": 72 }
+      ],
+      "layout": [
+        { "type": "rug", "x": 4, "y": 3.5, "facing": 0 },
+        { "type": "rug", "x": 9, "y": 6, "facing": 0 },
+        { "type": "sofa", "x": 4.5, "y": 1.5, "facing": 0 },
+        { "type": "sofa", "x": 2.5, "y": 3.75, "facing": 1 },
+        { "type": "round_table", "x": 5, "y": 4.25, "facing": 0 },
+        { "type": "beanbag", "x": 7.5, "y": 3.75, "facing": 0 },
+        { "type": "beanbag", "x": 7.5, "y": 5.25, "facing": 0 },
+        { "type": "cushion", "x": 5.25, "y": 5.5, "facing": 0 },
+        { "type": "round_table", "x": 10, "y": 6.75, "facing": 0 },
+        { "type": "chair", "x": 9.25, "y": 6.75, "facing": 1 },
+        { "type": "chair", "x": 11, "y": 7, "facing": 3 },
+        { "type": "sofa", "x": 9.5, "y": 9.5, "facing": 2 },
+        { "type": "cushion", "x": 10.25, "y": 8, "facing": 0 },
+        { "type": "bookshelf", "x": 8.5, "y": 0, "facing": 0 },
+        { "type": "bookshelf", "x": 10, "y": 0, "facing": 0 },
+        { "type": "desk", "x": 11.5, "y": 0, "facing": 0 },
+        { "type": "plant", "x": 0.25, "y": 0.25, "facing": 0 },
+        { "type": "plant", "x": 13, "y": 2, "facing": 0 },
+        { "type": "plant", "x": 0.25, "y": 10, "facing": 0 },
+        { "type": "plant", "x": 13, "y": 10, "facing": 0 },
+        { "type": "plant", "x": 7.5, "y": 0.25, "facing": 0 }
+      ]
+    }
+  },
+  "$templates": "Rooms other than the classic personal room (\"room\" above): size, spawn, windows, wall decor and a fixed furniture layout. The party lounge can't be decorated (yet)."
 }

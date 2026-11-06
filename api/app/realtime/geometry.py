@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from ..layout import _size, catalog
+from ..layout import _size, catalog, room_template
 
 Rect = tuple[float, float, float, float]
 
@@ -27,8 +27,9 @@ class RoomGeometry:
     obstacles: tuple[Rect, ...]
 
     @classmethod
-    def from_items(cls, items: list[dict[str, Any]]) -> "RoomGeometry":
+    def from_items(cls, items: list[dict[str, Any]], template: str = "personal") -> "RoomGeometry":
         c = catalog()
+        size = room_template(template)
         rects = []
         for i in items:
             entry = c["items"].get(i["type"])
@@ -36,7 +37,7 @@ class RoomGeometry:
                 continue
             w, h = _size(i["type"], i["facing"])
             rects.append((float(i["x"]), float(i["y"]), w, h))
-        return cls(c["room"]["width"], c["room"]["height"], tuple(rects))
+        return cls(size["width"], size["height"], tuple(rects))
 
     def is_free(self, x: float, y: float, r: float) -> bool:
         if not (math.isfinite(x) and math.isfinite(y)):
@@ -63,6 +64,6 @@ class RoomGeometry:
                     if best is None or d < best[0]:
                         best = (d, cx, cy)
         if best is None:
-            s = c["room"]["spawn"]
+            s = c["room"]["spawn"]  # a room with no free cell at all can't happen with valid layouts
             return float(s["x"]), float(s["y"])
         return best[1], best[2]

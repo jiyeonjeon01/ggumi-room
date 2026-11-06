@@ -25,6 +25,15 @@ def catalog() -> dict[str, Any]:
     return json.loads(_catalog_path().read_text(encoding="utf-8"))
 
 
+def room_template(name: str = "personal") -> dict[str, Any]:
+    """Room size and fixed setup: "personal" is the classic 9 x 8 room (catalog "room"),
+    other names come from catalog "templates" (e.g. the party "lounge")."""
+    c = catalog()
+    if name == "personal":
+        return {"width": c["room"]["width"], "height": c["room"]["height"], "spawn": c["room"]["spawn"], "layout": None}
+    return c["templates"][name]
+
+
 def default_layout() -> list[dict[str, Any]]:
     return [dict(i) for i in catalog()["defaultLayout"]]
 
@@ -51,11 +60,10 @@ def _overlaps(a: tuple, b: tuple) -> bool:
     return a[0] < b[0] + b[2] - EPS and b[0] < a[0] + a[2] - EPS and a[1] < b[1] + b[3] - EPS and b[1] < a[1] + a[3] - EPS
 
 
-def _paths_ok(blocking: list[tuple]) -> bool:
+def _paths_ok(blocking: list[tuple], width: float, height: float) -> bool:
     """Same flood fill as pathsConnected(): only tiny dead corners may be cut off."""
     c = catalog()
     grid, r = c["grid"], c["playerRadius"]
-    width, height = c["room"]["width"], c["room"]["height"]
     cols, rows = round(width / grid), round(height / grid)
     free = [False] * (cols * rows)
     for row in range(rows):
@@ -89,10 +97,11 @@ def _paths_ok(blocking: list[tuple]) -> bool:
     return all(n <= c["maxPocketCells"] for n in sizes[1:])
 
 
-def validate(items: list[dict[str, Any]]) -> tuple[str, int | None] | None:
+def validate(items: list[dict[str, Any]], template: str = "personal") -> tuple[str, int | None] | None:
     """Returns (error code, item index or None) for the first problem, or None if valid."""
     c = catalog()
-    width, height, grid = c["room"]["width"], c["room"]["height"], c["grid"]
+    size = room_template(template)
+    width, height, grid = size["width"], size["height"], c["grid"]
     if len(items) > c["maxItems"]:
         return "too_many", None
     blocking: list[tuple] = []
@@ -114,7 +123,7 @@ def validate(items: list[dict[str, Any]]) -> tuple[str, int | None] | None:
             if any(_overlaps(b, rect) for b in blocking):
                 return "overlap", index
             blocking.append(rect)
-    if not _paths_ok(blocking):
+    if not _paths_ok(blocking, width, height):
         return "blocked_path", None
     return None
 

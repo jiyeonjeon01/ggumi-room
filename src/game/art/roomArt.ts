@@ -43,7 +43,10 @@ export function drawFloor(w: number, h: number, t: RoomTheme): LayerArt {
  * Windows are separate layers (art/windowArt.ts) so their view can change.
  * The two front walls are left open (cutaway view), like a diorama.
  */
-export function drawWalls(w: number, h: number, t: RoomTheme): LayerArt {
+/** Wall decorations: the personal room's frame/shelf/garland, or the party lounge's. */
+export type WallDecor = 'personal' | 'lounge';
+
+export function drawWalls(w: number, h: number, t: RoomTheme, decor: WallDecor = 'personal'): LayerArt {
   const T = WALL_THICKNESS;
   const ox = (h + T) * (TILE_W / 2) + PAD;
   const oy = WALL_HEIGHT + T * TILE_H + PAD;
@@ -67,10 +70,60 @@ export function drawWalls(w: number, h: number, t: RoomTheme): LayerArt {
   pc.planeRect('y', 0, 0.05, w - 0.05, 8, 9, mix(t.wallTrim, t.outline, 0.4));
   pc.planeRect('x', 0, 0.05, h - 0.05, 8, 9, mix(t.wallTrim, t.outline, 0.4));
 
-  drawFrame(pc, t, 4.6, 5.6);
-  drawShelf(pc, t, 0.7, 2.3);
-  drawGarland(pc, t, 3.6, 7.4);
+  if (decor === 'lounge') {
+    drawLoungeDecor(pc, t, w, h);
+  } else {
+    drawFrame(pc, t, 4.6, 5.6);
+    drawShelf(pc, t, 0.7, 2.3);
+    drawGarland(pc, t, 3.6, 7.4);
+  }
   return { canvas: pc.toCanvas(), anchorX: ox, anchorY: oy };
+}
+
+/**
+ * Party lounge: string lights running along both walls, two little posters
+ * and a pennant banner, so it reads as a different, bigger place.
+ */
+function drawLoungeDecor(pc: PixelCanvas, t: RoomTheme, w: number, h: number): void {
+  const bulbs = [0xffe38a, t.accent, 0x9fd3c7, 0xb7a6f0];
+  const lights = (plane: 'x' | 'y', length: number) => {
+    // Wire with gentle sags between hooks, a bulb at the bottom of each sag.
+    const seg = 1.5;
+    for (let u = 0.3; u < length - 0.3; u += 0.05) {
+      const k = ((u - 0.3) % seg) / seg;
+      const sag = Math.sin(k * Math.PI) * 5;
+      pc.planeRect(plane, 0, u - 0.03, u + 0.03, 82 - sag, 83 - sag, t.outline);
+    }
+    let i = 0;
+    for (let u = 0.3 + seg / 2; u < length - 0.3; u += seg / 2, i++) {
+      const k = ((u - 0.3) % seg) / seg;
+      const z = 82 - Math.sin(k * Math.PI) * 5;
+      const c = bulbs[i % bulbs.length] as number;
+      pc.planeRect(plane, 0, u - 0.07, u + 0.07, z - 5, z - 1, mix(c, t.outline, 0.35));
+      pc.planeRect(plane, 0, u - 0.05, u + 0.05, z - 4, z - 1, c);
+    }
+  };
+  lights('y', w);
+  lights('x', h);
+  // Posters on the left wall.
+  const poster = (u0: number, u1: number, c: number) => {
+    pc.planeRect('x', 0, u0 - 0.05, u1 + 0.05, 34, 66, t.outline);
+    pc.planeRect('x', 0, u0, u1, 36, 64, mix(c, 0xffffff, 0.55));
+    pc.planeRect('x', 0, u0 + 0.15, u1 - 0.15, 44, 56, c);
+    pc.planeRect('x', 0, u0 + 0.25, u1 - 0.25, 40, 42, mix(c, t.outline, 0.3));
+  };
+  poster(2.0, 3.2, t.accent);
+  poster(9.0, 10.2, 0x9fd3c7);
+  // Pennant banner on the right wall, between the windows.
+  const u0 = 7.6;
+  const u1 = Math.min(w - 0.6, 11.4);
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const u = u0 + ((u1 - u0) * (i + 0.5)) / n;
+    const c = i % 2 ? t.accent : 0xffe38a;
+    for (let k = 0; k < 5; k++) pc.planeRect('y', 0, u - 0.12 + k * 0.024, u + 0.12 - k * 0.024, 70 - k * 2, 72 - k * 2, c);
+  }
+  pc.planeRect('y', 0, u0, u1, 72, 73, t.outline);
 }
 
 function drawFrame(pc: PixelCanvas, t: RoomTheme, u0: number, u1: number): void {

@@ -109,23 +109,33 @@ export const LAYOUT_ERROR_TEXT: Record<LayoutErrorCode, string> = {
   blocked_path: '이렇게 놓으면 갈 수 없는 곳이 생겨요.',
 };
 
-const COLS = Math.round(ROOM_W / GRID);
-const ROWS = Math.round(ROOM_H / GRID);
-const cellOf = (p: Vec2) => Math.min(ROWS - 1, Math.max(0, Math.floor(p.y / GRID))) * COLS + Math.min(COLS - 1, Math.max(0, Math.floor(p.x / GRID)));
+/** Floor size in tiles; the classic personal room unless a template says otherwise. */
+export interface RoomSize {
+  w: number;
+  h: number;
+}
+export const PERSONAL_SIZE: RoomSize = { w: ROOM_W, h: ROOM_H };
+
+const gridOf = (size: RoomSize) => ({ cols: Math.round(size.w / GRID), rows: Math.round(size.h / GRID) });
+const cellOf = (p: Vec2, size: RoomSize) => {
+  const { cols, rows } = gridOf(size);
+  return Math.min(rows - 1, Math.max(0, Math.floor(p.y / GRID))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(p.x / GRID)));
+};
 
 /**
  * Splits the walkable floor (same 0.25-tile grid and body size as the game's
  * NavGrid) into connected areas. Returns the area id per cell (-1 = blocked)
  * and the id of the largest area.
  */
-function floorAreas(blocking: readonly Rect[]): { area: Int32Array; sizes: number[]; main: number } {
+function floorAreas(blocking: readonly Rect[], size: RoomSize): { area: Int32Array; sizes: number[]; main: number } {
   const r = PLAYER_RADIUS;
+  const { cols: COLS, rows: ROWS } = gridOf(size);
   const area = new Int32Array(COLS * ROWS).fill(-2); // -2 walkable unvisited, -1 blocked
   for (let row = 0; row < ROWS; row++) {
     for (let c = 0; c < COLS; c++) {
       const x = (c + 0.5) * GRID;
       const y = (row + 0.5) * GRID;
-      const free = !(x - r < 0 || y - r < 0 || x + r > ROOM_W || y + r > ROOM_H) && !blocking.some((b) => circleIntersectsRect(x, y, r, b));
+      const free = !(x - r < 0 || y - r < 0 || x + r > size.w || y + r > size.h) && !blocking.some((b) => circleIntersectsRect(x, y, r, b));
       area[row * COLS + c] = free ? -2 : -1;
     }
   }
@@ -166,14 +176,15 @@ function floorAreas(blocking: readonly Rect[]): { area: Int32Array; sizes: numbe
  * of the floor: every area cut off from the main one must be smaller than
  * MAX_POCKET_CELLS + 1 cells. With `player`, their spot must stay in the main area.
  */
-export function pathsConnected(blocking: readonly Rect[], player?: Vec2): boolean {
-  const { area, sizes, main } = floorAreas(blocking);
+export function pathsConnected(blocking: readonly Rect[], player?: Vec2, size: RoomSize = PERSONAL_SIZE): boolean {
+  const { area, sizes, main } = floorAreas(blocking, size);
   if (main < 0) return false;
   if (sizes.some((n, id) => id !== main && n > MAX_POCKET_CELLS)) return false;
   if (!player) return true;
+  const { cols: COLS, rows: ROWS } = gridOf(size);
   // The player may stand closer to furniture than a cell center allows, so
   // also accept a main-area cell right next to theirs.
-  const center = cellOf(player);
+  const center = cellOf(player, size);
   const c = center % COLS;
   const row = (center - c) / COLS;
   for (let dr = -1; dr <= 1; dr++) {
@@ -191,7 +202,11 @@ export function pathsConnected(blocking: readonly Rect[], player?: Vec2): boolea
  * matching the server), or null. `player` (editor only) keeps furniture off
  * the spot where the character stands.
  */
-export function validateLayout(items: readonly { type: string; x: number; y: number; facing: number }[], player?: Vec2): LayoutError | null {
+export function validateLayout(
+  items: readonly { type: string; x: number; y: number; facing: number }[],
+  player?: Vec2,
+  size: RoomSize = PERSONAL_SIZE,
+): LayoutError | null {
   if (items.length > MAX_ITEMS) return { code: 'too_many' };
   const rects: Rect[] = [];
   const blocking: Rect[] = [];
@@ -200,7 +215,7 @@ export function validateLayout(items: readonly { type: string; x: number; y: num
     if (!isFacingFor(it.type, it.facing)) return { code: 'bad_facing', index };
     if (!onGrid(it.x) || !onGrid(it.y)) return { code: 'off_grid', index };
     const rect = footprint(it as LayoutItem);
-    if (rect.x < -EPS || rect.y < -EPS || rect.x + rect.w > ROOM_W + EPS || rect.y + rect.h > ROOM_H + EPS) {
+    if (rect.x < -EPS || rect.y < -EPS || rect.x + rect.w > size.w + EPS || rect.y + rect.h > size.h + EPS) {
       return { code: 'out_of_bounds', index };
     }
     rects.push(rect);
@@ -210,7 +225,7 @@ export function validateLayout(items: readonly { type: string; x: number; y: num
       blocking.push(rect);
     }
   }
-  if (!pathsConnected(blocking, player)) return { code: 'blocked_path' };
+  if (!pathsConnected(blocking, player, size)) return { code: 'blocked_path' };
   return null;
 }
 

@@ -146,3 +146,15 @@ def test_realtime_geometry_uses_the_turned_footprint():
     g = RoomGeometry.from_items([{"type": "bed", "x": 0, "y": 0, "facing": 3}])  # 2 x 3 like facing 1
     assert g.obstacles == ((0.0, 0.0, 2, 3),)
     assert not g.is_free(1.0, 2.5, 0.2) and g.is_free(2.6, 1.0, 0.2)
+
+
+def test_lounge_template_is_valid_and_bigger():
+    from app.layout import room_template, validate
+    from app.realtime.geometry import RoomGeometry
+
+    t = room_template("lounge")
+    assert (t["width"], t["height"]) == (14, 11)
+    assert validate(t["layout"], "lounge") is None
+    assert validate(t["layout"])[0] == "out_of_bounds"  # wouldn't fit the personal room
+    g = RoomGeometry.from_items(t["layout"], "lounge")
+    assert g.width == 14 and g.is_free(t["spawn"]["x"], t["spawn"]["y"], 0.22)
