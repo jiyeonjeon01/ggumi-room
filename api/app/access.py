@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from .models import Friendship, Room, RoomGuest, User
+from .models import FriendRequest, Friendship, Room, RoomGuest, User
 
 
 def pair(a: uuid.UUID, b: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
@@ -26,6 +26,24 @@ def lock_pair(db: Session, a: uuid.UUID, b: uuid.UUID) -> None:
 def are_friends(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
     x, y = pair(a, b)
     return db.scalar(select(exists().where(Friendship.user_a_id == x, Friendship.user_b_id == y))) or False
+
+
+def relation(db: Session, me: uuid.UUID, other: uuid.UUID) -> str:
+    """'self' | 'friend' | 'outgoing' (I asked) | 'incoming' (they asked) | 'none'."""
+    if me == other:
+        return "self"
+    if are_friends(db, me, other):
+        return "friend"
+    asked_by = db.scalar(
+        select(FriendRequest.requester_id).where(
+            FriendRequest.status == "pending",
+            ((FriendRequest.requester_id == me) & (FriendRequest.addressee_id == other))
+            | ((FriendRequest.requester_id == other) & (FriendRequest.addressee_id == me)),
+        )
+    )
+    if asked_by is None:
+        return "none"
+    return "outgoing" if asked_by == me else "incoming"
 
 
 def room_access(db: Session, room: Room, viewer: User) -> str | None:

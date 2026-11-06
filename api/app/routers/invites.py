@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
+from ..access import relation
 from ..config import get_settings
 from ..db import get_db, utcnow
 from ..deps import client_ip, current_user
@@ -135,4 +136,12 @@ def accept_invite(token: str, request: Request, user: User = Depends(current_use
             .on_conflict_do_nothing(index_elements=["room_id", "user_id"])
         )
         db.commit()
-    return InviteAcceptOut(room_id=room.id)
+    # Owner's nickname and our relation, so the room can offer a friend request.
+    # Nothing is created here: becoming friends still goes through a request the user sends.
+    return InviteAcceptOut(
+        room_id=room.id,
+        invitation_id=inv.id,
+        owner_id=owner.id,
+        owner_nickname=owner.nickname,
+        relation=relation(db, user.id, owner.id),
+    )

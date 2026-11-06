@@ -2,6 +2,7 @@ import { useState, type ChangeEvent, type FormEvent } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../app/auth';
 import { navigate, pendingInvite } from '../app/router';
+import { inviteArrival, type InviteArrival } from '../app/inviteArrival';
 import { loginIdError, nicknameError, passwordError } from '../app/rules';
 import { Button, Card, Field } from '../components/ui';
 
@@ -13,9 +14,10 @@ export async function finishAuth(next: string): Promise<void> {
   const token = pendingInvite.get();
   if (token) {
     try {
-      const { room_id } = await api<{ room_id: string }>('POST', `/api/invites/${token}/accept`);
+      const arrival = await api<InviteArrival>('POST', `/api/invites/${token}/accept`);
       pendingInvite.clear();
-      navigate(`/room/${room_id}`, { replace: true });
+      inviteArrival.set(arrival);
+      navigate(`/room/${arrival.room_id}`, { replace: true });
       return;
     } catch {
       // Expired/revoked meanwhile: show the invite card, which explains it.

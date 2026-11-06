@@ -130,3 +130,9 @@ class InvitePreviewOut(BaseModel):
 
 class InviteAcceptOut(BaseModel):
     room_id: uuid.UUID
+    # For the "be friends?" prompt after entering through an invite.
+    invitation_id: uuid.UUID
+    owner_id: uuid.UUID
+    owner_nickname: str
+    # "self" when it's my own room; otherwise like search results.
+    relation: Literal["self", "none", "friend", "outgoing", "incoming"]

@@ -3,10 +3,12 @@ import { api, ApiError, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
 import { ChatProvider, useChat } from './app/chat';
 import { LiveProvider } from './app/live';
+import { inviteArrival, shouldOfferFriend, type InviteArrival } from './app/inviteArrival';
 import { useRoomLive } from './app/roomLive';
 import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
 import { ChatWindow } from './components/ChatWindow';
+import { FriendOfferModal } from './components/FriendOfferModal';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
@@ -258,8 +260,18 @@ function RoomLoadState({ error }: { error: string | null }) {
 function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomInfo) => void }) {
   const { me } = useAuth();
   const toast = useToast();
-  const { incomingCount } = useFriends();
+  const { incomingCount, reload: reloadFriends } = useFriends();
   const { totalUnread } = useChat();
+
+  // Entered through the owner's invite link: offer a friend request once (see inviteArrival).
+  const [offer, setOffer] = useState<InviteArrival | null>(null);
+  const myId = me?.id;
+  useEffect(() => {
+    const a = inviteArrival.peek(info.id);
+    if (!a || !myId) return;
+    inviteArrival.clear();
+    if (a.owner_id !== myId && shouldOfferFriend(myId, a)) setOffer(a);
+  }, [info.id, myId]);
   const isOwner = info.access === 'owner';
   const nickname = me?.nickname ?? DEMO_ROOM.owner;
 
@@ -465,6 +477,17 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
           )
         }
     />
+    {offer && (
+      <FriendOfferModal
+        arrival={offer}
+        onClose={() => setOffer(null)}
+        onDone={(message) => {
+          setOffer(null);
+          toast(message);
+          void reloadFriends().catch(() => {});
+        }}
+      />
+    )}
     {conflict && (
       <Modal title="방 배치가 먼저 바뀌었어요" onClose={() => setConflict(false)}>
         <p className="mb-4 text-sm leading-relaxed text-plum-700">

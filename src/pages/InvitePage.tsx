@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type InvitePreview } from '../api/client';
 import { useAuth } from '../app/auth';
+import { inviteArrival, type InviteArrival } from '../app/inviteArrival';
 import { navigate, pendingInvite } from '../app/router';
 import { Button, Card } from '../components/ui';
 
@@ -35,9 +36,10 @@ export function InvitePage({ token }: { token: string }) {
   const enter = async () => {
     setJoining(true);
     try {
-      const { room_id } = await api<{ room_id: string }>('POST', `/api/invites/${token}/accept`);
+      const arrival = await api<InviteArrival>('POST', `/api/invites/${token}/accept`);
       pendingInvite.clear();
-      navigate(`/room/${room_id}`, { replace: true });
+      inviteArrival.set(arrival);
+      navigate(`/room/${arrival.room_id}`, { replace: true });
     } catch (e) {
       setError(e instanceof ApiError ? e.detail.message : '방에 들어가지 못했어요.');
       setJoining(false);

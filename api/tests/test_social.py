@@ -177,3 +177,33 @@ def test_invalid_invite_tokens(api):
     for bad in ["nope", "x" * 32, "../../etc/passwd", "<script>alert(1)</script>"]:
         r = api.get(f"/api/invites/{bad}")
         assert r.status_code in (200, 404) and (r.status_code == 404 or r.json()["status"] == "not_found"), bad
+
+
+def test_invite_accept_tells_the_relation_for_a_friend_prompt(make_user):
+    owner, guest = make_user("꾸미", "ggumi01"), make_user("토리", "tori01")
+    url = owner.post("/api/rooms/me/invite").json()["url"]
+    token = url.rsplit("/", 1)[1]
+
+    r = guest.post(f"/api/invites/{token}/accept").json()
+    assert (r["owner_nickname"], r["owner_id"], r["relation"]) == ("꾸미", owner.me["id"], "none")
+    assert r["invitation_id"] and r["room_id"] == owner.me["room_id"]
+    # Accepting an invite never creates a friendship or a request by itself.
+    assert guest.get("/api/friends").json() == []
+    assert guest.get("/api/friends/requests").json() == {"incoming": [], "outgoing": []}
+
+    # After the guest asks: outgoing (no second request offered)
+    guest.post("/api/friends/requests", json={"user_id": owner.me["id"]})
+    assert guest.post(f"/api/invites/{token}/accept").json()["relation"] == "outgoing"
+    # The owner opening their own invite: no prompt
+    assert owner.post(f"/api/invites/{token}/accept").json()["relation"] == "self"
+    # Already friends
+    third = make_user("새롬", "saerom01")
+    third.post("/api/friends/requests", json={"user_id": owner.me["id"]})
+    req = third.get("/api/friends/requests").json()["outgoing"][0]["id"]
+    assert owner.post(f"/api/friends/requests/{req}/accept").status_code == 200
+    assert third.post(f"/api/invites/{token}/accept").json()["relation"] == "friend"
+    # They asked us first: incoming (sending a request back accepts theirs, as before)
+    owner2 = make_user("하늘", "haneul01")
+    url2 = owner2.post("/api/rooms/me/invite").json()["url"]
+    owner2.post("/api/friends/requests", json={"user_id": guest.me["id"]})
+    assert guest.post(f"/api/invites/{url2.rsplit('/', 1)[1]}/accept").json()["relation"] == "incoming"
