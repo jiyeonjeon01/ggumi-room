@@ -15,6 +15,8 @@
 | API·DB | 2026-11-06 운영 반영 (테스트 기간). web·api·db·cloudflared 4개 컨테이너, 마이그레이션 `7b1d3e5f9a20`, `SIGNUP_CODE`로 가입 제한 중 |
 | 되돌릴 이미지 | `ggumiroom-web:rollback-20261106` (API 반영 전 정적 사이트), `ggumiroom-web:rollback-20261106-1035`·`ggumiroom-api:rollback-20261106-1035` (가구 15종 반영 직전) |
 | 최근 반영 | 2026-11-06 10:34 가구 15종·마우스 조작·패널 고정·Esc 키 수정. web·api만 교체(약 6초), 마이그레이션 없음 |
+| 실시간 반영 | 2026-11-06 12:41 실시간 방·친구 접속 상태·1:1 채팅. web·api만 교체(약 6초), 마이그레이션 `ca9664530522`(새 테이블만) 적용, 기존 사용자·친구·방·가구·세션 그대로. 되돌릴 이미지 `ggumiroom-web:rollback-20261106-1240`·`ggumiroom-api:rollback-20261106-1240` |
+| WebSocket | `wss://www.ggumiroom.com/ws/live` Cloudflare 경유 101 확인, 세션 없음·위조는 4401, 다른 Origin은 403 |
 | 백업 | `%USERPROFILE%\ggumiroom-backups\` (저장소 밖), 복원 확인함 |
 
 ```
@@ -231,6 +233,7 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
    - 프론트: `docker tag ggumiroom-web:rollback-YYYYMMDD ggumiroom-web:latest` → `docker compose --profile tunnel up -d --no-build web`
    - API·DB 끄기: `docker compose stop api` (이전 프론트는 `/api`를 쓰지 않음, DB 데이터는 `db-data` 볼륨에 남음)
    - 마이그레이션만 되돌리기: 백업 후 `docker compose exec api alembic downgrade <리비전>`
+   - 실시간 반영 되돌리기: 이전 이미지는 `/ws/`가 404이고 `/api/messages`가 없을 뿐 DB(`ca9664530522`)와 함께 동작합니다. 채팅 테이블까지 지우려면 백업 후 `docker compose exec api alembic downgrade 7b1d3e5f9a20`(이 두 테이블만 삭제).
 
 ### 마이그레이션 기록
 
