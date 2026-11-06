@@ -15,6 +15,12 @@
     "table": { "name": "좌식 테이블", "w": 1.25, "h": 1.25, "blocking": true },
     "plant": { "name": "화분", "w": 0.75, "h": 0.75, "blocking": true },
     "cushion": { "name": "방석", "w": 0.75, "h": 0.75, "blocking": false },
+    "sofa": { "name": "2인 소파", "w": 2, "h": 1, "blocking": true },
+    "vanity": { "name": "화장대", "w": 1.5, "h": 0.75, "blocking": true },
+    "wardrobe": { "name": "옷장", "w": 1.5, "h": 0.75, "blocking": true },
+    "round_table": { "name": "원형 테이블", "w": 1, "h": 1, "blocking": true },
+    "beanbag": { "name": "빈백 소파", "w": 1, "h": 1, "blocking": true },
+    "mirror": { "name": "전신거울", "w": 0.75, "h": 0.5, "blocking": true },
     "rug": { "name": "러그", "w": 3, "h": 2.5, "blocking": false }
   },
   "defaultLayout": [

@@ -59,6 +59,28 @@
       ],
       "error": null
     },
+    {
+      "name": "new pieces along the walls (both facings)",
+      "items": [
+        { "type": "wardrobe", "x": 0, "y": 0, "facing": 1 },
+        { "type": "vanity", "x": 2, "y": 0, "facing": 0 },
+        { "type": "mirror", "x": 4, "y": 0, "facing": 0 },
+        { "type": "sofa", "x": 5, "y": 0, "facing": 0 },
+        { "type": "mirror", "x": 0, "y": 2, "facing": 1 },
+        { "type": "round_table", "x": 3, "y": 4, "facing": 0 },
+        { "type": "beanbag", "x": 5.5, "y": 4.5, "facing": 1 }
+      ],
+      "error": null
+    },
+    {
+      "name": "rotated sofa overlaps a wardrobe",
+      "items": [
+        { "type": "wardrobe", "x": 0, "y": 0, "facing": 0 },
+        { "type": "sofa", "x": 1, "y": 0.5, "facing": 1 }
+      ],
+      "error": "overlap"
+    },
+    { "name": "rotated wardrobe outside", "items": [{ "type": "wardrobe", "x": 8.5, "y": 0, "facing": 1 }], "error": "out_of_bounds" },
     { "name": "too many", "items": "many:41", "error": "too_many" }
   ]
 }

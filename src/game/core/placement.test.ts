@@ -5,6 +5,7 @@ import {
   DEFAULT_LAYOUT,
   findSpot,
   footprint,
+  FURNITURE_TYPES,
   MAX_ITEMS,
   pathsConnected,
   size,
@@ -47,6 +48,21 @@ describe('placement rules', () => {
   it('keeps furniture off the player', () => {
     expect(validateLayout([{ type: 'chair', x: 2, y: 2, facing: 0 }], { x: 2.3, y: 2.3 })?.code).toBe('on_player');
     expect(validateLayout([{ type: 'rug', x: 2, y: 2, facing: 0 }], { x: 2.3, y: 2.3 })).toBeNull(); // rugs are fine
+  });
+
+  it('has the 15 catalog pieces, all addable, turnable and back again', () => {
+    expect(FURNITURE_TYPES).toHaveLength(15);
+    for (const type of ['sofa', 'vanity', 'wardrobe', 'round_table', 'beanbag', 'mirror'] as const) {
+      expect(FURNITURE_TYPES).toContain(type);
+      const e = new LayoutEditor([], { x: 7, y: 5.5 }); // empty room: nothing in the way of turning
+      expect(e.add(type).ok).toBe(true);
+      const uid = e.selected!.uid;
+      expect(e.rotate(uid).ok).toBe(true);
+      expect(e.selected?.facing).toBe(1);
+      expect(e.rotate(uid).ok).toBe(true);
+      expect(e.selected?.facing).toBe(0);
+      expect(validateLayout(e.layout())).toBeNull();
+    }
   });
 
   it('finds a free spot for a new piece, or none when the room is full', () => {

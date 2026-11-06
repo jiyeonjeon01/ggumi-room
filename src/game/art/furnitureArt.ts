@@ -19,6 +19,7 @@ interface IsoCanvas {
   floorRect(x0: number, y0: number, x1: number, y1: number, z: number, color: number): void;
   at(x: number, y: number, z?: number): { x: number; y: number };
   stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX?: boolean): void;
+  heightField(x0: number, y0: number, x1: number, y1: number, z: number, hMax: number, h: (X: number, Y: number) => number, c: BoxColors): void;
 }
 
 /**
@@ -44,7 +45,18 @@ class AxisSwap implements IsoCanvas {
   stamp(x: number, y: number, rows: readonly string[], palette: Readonly<Record<string, number>>, flipX = false): void {
     this.pc.stamp(x, y, rows, palette, !flipX); // flat sprites (leaves) face the other way
   }
+  heightField(x0: number, y0: number, x1: number, y1: number, z: number, hMax: number, h: (X: number, Y: number) => number, c: BoxColors): void {
+    this.pc.heightField(y0, x0, y1, x1, z, hMax, (X, Y) => h(Y, X), c);
+  }
 }
+
+/** Height of a dome (pixels) over an ellipse centered at (cx, cy) with radii rx, ry. */
+const dome = (X: number, Y: number, cx: number, cy: number, rx: number, ry: number, height: number) => {
+  const d = ((X - cx) / rx) ** 2 + ((Y - cy) / ry) ** 2;
+  return d < 1 ? height * Math.sqrt(1 - d) : 0;
+};
+/** A flat disk (pixels high) of radius r around (cx, cy). */
+const disk = (X: number, Y: number, cx: number, cy: number, r: number, height: number) => (Math.hypot(X - cx, Y - cy) < r ? height : 0);
 
 const WHITE = 0xfffbfd;
 
@@ -180,6 +192,116 @@ const ART: Record<FurnitureId, Draw> = {
   cushion(pc, t) {
     pc.isoBox(0.04, 0.04, 0, 0.67, 0.67, 6, shade(t.fabric, t.outline, mix(t.fabric, WHITE, 0.4)));
   },
+
+  sofa(pc, t) {
+    // Two-seater: backrest along the back (-y) edge, seats face +y.
+    const cloth = shade(t.fabric, t.outline, mix(t.fabric, WHITE, 0.4));
+    const deep = shade(mix(t.fabric, 0x000000, 0.1), t.outline);
+    const feet = shade(mix(t.wood, 0x000000, 0.15), t.outline);
+    for (const [x, y] of [[0.08, 0.08], [1.8, 0.08], [0.08, 0.8], [1.8, 0.8]] as const) pc.isoBox(x, y, 0, 0.12, 0.12, 3, feet);
+    pc.isoBox(0.04, 0.04, 3, 1.92, 0.92, 7, deep); // base
+    pc.isoBox(0.04, 0.04, 10, 1.92, 0.3, 14, cloth); // backrest
+    pc.isoBox(0.24, 0.34, 10, 0.76, 0.6, 5, cloth); // seat cushions
+    pc.isoBox(1.0, 0.34, 10, 0.76, 0.6, 5, cloth);
+    pc.isoBox(0.04, 0.04, 10, 0.2, 0.92, 9, cloth); // armrests
+    pc.isoBox(1.76, 0.04, 10, 0.2, 0.92, 9, cloth);
+    pc.isoBox(0.3, 0.36, 15, 0.38, 0.12, 7, shade(t.accent, t.outline, mix(t.accent, WHITE, 0.4))); // pillow
+  },
+
+  vanity(pc, t) {
+    // Dressing table with a standing mirror at the back; drawers on the right.
+    const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
+    const leg = shade(mix(t.wood, 0x000000, 0.1), t.outline);
+    pc.isoBox(0.06, 0.08, 0, 0.1, 0.1, 18, leg);
+    pc.isoBox(0.06, 0.58, 0, 0.1, 0.1, 18, leg);
+    pc.isoBox(0.86, 0.08, 0, 0.6, 0.6, 18, wood); // drawers
+    pc.planeRect('y', 0.68, 0.92, 1.4, 9, 10, t.outline);
+    pc.planeRect('y', 0.68, 1.1, 1.22, 13, 15, mix(t.accent, WHITE, 0.2));
+    pc.planeRect('y', 0.68, 1.1, 1.22, 4, 6, mix(t.accent, WHITE, 0.2));
+    pc.isoBox(0, 0.04, 18, 1.5, 0.68, 3, shade(mix(t.wood, WHITE, 0.25), t.outline, WHITE)); // top
+    // Mirror: frame, glass with two light streaks, rounded (stepped) top.
+    pc.isoBox(0.28, 0.06, 21, 0.94, 0.1, 28, wood);
+    pc.isoBox(0.42, 0.06, 49, 0.66, 0.1, 3, wood);
+    const glass = mix(t.windowSky, WHITE, 0.45);
+    pc.planeRect('y', 0.16, 0.36, 1.14, 24, 47, glass);
+    pc.planeRect('y', 0.16, 0.5, 1.0, 47, 50, glass);
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 9; i++) {
+        const u = 0.5 + k * 0.22 + i * 0.04;
+        pc.planeRect('y', 0.16, u, u + 0.06, 28 + i * 2, 30 + i * 2, mix(glass, WHITE, 0.6));
+      }
+    }
+    // Perfume bottle and a little jar.
+    pc.isoBox(1.18, 0.4, 21, 0.12, 0.12, 6, shade(mix(t.accent, WHITE, 0.3), t.outline, WHITE));
+    pc.isoBox(1.21, 0.43, 27, 0.06, 0.06, 2, shade(t.outline, t.outline));
+    pc.isoBox(0.3, 0.42, 21, 0.16, 0.16, 3, shade(WHITE, t.outline));
+  },
+
+  wardrobe(pc, t) {
+    const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
+    pc.isoBox(0, 0, 0, 1.5, 0.75, 70, wood);
+    pc.isoBox(0, 0, 70, 1.5, 0.75, 3, shade(mix(t.wood, WHITE, 0.2), t.outline, WHITE)); // crown
+    const front = (u0: number, u1: number, z0: number, z1: number, c: number) => pc.planeRect('y', 0.75, u0, u1, z0, z1, c);
+    const panel = mix(t.wood, WHITE, 0.18);
+    const groove = mix(t.wood, 0x000000, 0.3);
+    front(0.02, 1.48, 1, 4, groove); // plinth shadow
+    front(0.74, 0.77, 4, 69, groove); // gap between the doors
+    for (const [u0, u1] of [[0.12, 0.66], [0.85, 1.39]] as const) {
+      front(u0, u1, 10, 64, panel);
+      front(u0, u1, 10, 11, groove); // inset: lower edge in shadow
+      front(u1 - 0.03, u1, 10, 64, groove);
+    }
+    front(0.62, 0.68, 34, 41, t.outline); // handles
+    front(0.83, 0.89, 34, 41, t.outline);
+    front(0.02, 0.05, 4, 69, mix(t.wood, WHITE, 0.3)); // lit near edge
+  },
+
+  round_table(pc, t) {
+    const top = shade(mix(t.wood, WHITE, 0.3), t.outline, WHITE);
+    const leg = shade(mix(t.wood, 0x000000, 0.1), t.outline);
+    pc.heightField(0.1, 0.1, 0.9, 0.9, 0, 3, (X, Y) => disk(X, Y, 0.5, 0.5, 0.3, 2), leg); // foot
+    pc.isoBox(0.44, 0.44, 2, 0.12, 0.12, 16, leg); // pedestal
+    pc.heightField(0, 0, 1, 1, 18, 4, (X, Y) => disk(X, Y, 0.5, 0.5, 0.5, 3), top);
+    const doily = mix(t.fabric, WHITE, 0.5);
+    // Round doily lying on the top.
+    pc.heightField(0.1, 0.1, 0.9, 0.9, 21, 1, (X, Y) => disk(X, Y, 0.5, 0.5, 0.33, 0.5), { top: doily, left: doily, right: doily, outline: mix(t.fabric, WHITE, 0.15) });
+    // A plate with a cookie and a mug (short and wide so they don't read as candles).
+    pc.heightField(0.2, 0.2, 0.6, 0.6, 21, 2, (X, Y) => disk(X, Y, 0.4, 0.42, 0.15, 1), shade(WHITE, t.outline));
+    pc.heightField(0.3, 0.3, 0.5, 0.52, 22, 2, (X, Y) => disk(X, Y, 0.4, 0.42, 0.07, 1.5), shade(0xe8b878, t.outline));
+    const mug = shade(mix(t.accent, WHITE, 0.55), t.outline, WHITE);
+    pc.heightField(0.5, 0.5, 0.78, 0.78, 21, 6, (X, Y) => disk(X, Y, 0.64, 0.62, 0.1, 5), mug);
+    const handle = pc.at(0.74, 0.7, 24);
+    pc.stamp(handle.x, handle.y - 1, ['kk', '.k', 'kk'], { k: t.outline });
+  },
+
+  beanbag(pc, t) {
+    // A squashy bag: low dome with a raised back (-y) lump and a seat dip.
+    const base = mix(t.accent, WHITE, 0.25);
+    pc.heightField(0, 0, 1, 1, 0, 17, (X, Y) => {
+      const body = dome(X, Y, 0.5, 0.54, 0.48, 0.44, 11);
+      const back = dome(X, Y, 0.5, 0.3, 0.46, 0.3, 16);
+      const dip = Math.max(0, 1 - Math.hypot(X - 0.52, Y - 0.6) / 0.26) * 3;
+      return Math.max(body - dip, back);
+    }, shade(base, t.outline, mix(base, WHITE, 0.45)));
+  },
+
+  mirror(pc, t) {
+    // Full-length mirror leaning on the back wall, glass facing +y.
+    const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
+    pc.isoBox(0.08, 0.26, 0, 0.6, 0.18, 3, shade(mix(t.wood, 0x000000, 0.1), t.outline)); // foot
+    pc.isoBox(0.06, 0.12, 0, 0.64, 0.12, 60, wood); // frame
+    pc.isoBox(0.16, 0.12, 60, 0.44, 0.12, 2, wood); // rounded top
+    const glass = mix(t.windowSky, WHITE, 0.45);
+    pc.planeRect('y', 0.24, 0.13, 0.63, 5, 57, glass);
+    pc.planeRect('y', 0.24, 0.22, 0.54, 57, 59, glass);
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 12; i++) {
+        const u = 0.2 + k * 0.18 + i * 0.02;
+        pc.planeRect('y', 0.24, u, u + 0.04, 18 + i * 3, 21 + i * 3, mix(glass, WHITE, 0.6));
+      }
+    }
+  },
+
 
   rug(pc, t) {
     pc.isoBox(0, 0, 0, 3, 2.5, 1, { top: t.rug, left: t.rugEdge, right: t.rugEdge, outline: t.rugEdge });

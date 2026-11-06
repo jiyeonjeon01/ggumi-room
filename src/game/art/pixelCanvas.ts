@@ -138,6 +138,61 @@ export class PixelCanvas {
     }
   }
 
+  /**
+   * A rounded solid (round table top, beanbag) given as a height field:
+   * h(X, Y) is the height in pixels above z at floor point (X, Y), 0 or less
+   * outside the shape. Each pixel is shaded like isoBox faces: flat parts take
+   * the top color, slopes and sides facing +y the lit left color and those
+   * facing +x the shaded right color, with an outline around the silhouette.
+   */
+  heightField(x0: number, y0: number, x1: number, y1: number, z: number, hMax: number, h: (X: number, Y: number) => number, c: BoxColors): void {
+    const hw = TILE_W / 2;
+    const hh = TILE_H / 2;
+    const mask = new Uint8Array(this.width * this.height);
+    const left = Math.max(0, Math.floor(this.ox + (x0 - y1) * hw));
+    const right = Math.min(this.width, Math.ceil(this.ox + (x1 - y0) * hw));
+    const top = Math.max(0, Math.floor(this.oy + (x0 + y0) * hh - z - hMax));
+    const bottom = Math.min(this.height, Math.ceil(this.oy + (x1 + y1) * hh - z));
+    const eps = 0.04;
+    for (let py = top; py < bottom; py++) {
+      for (let px = left; px < right; px++) {
+        const sx = (px + 0.5 - this.ox) / hw;
+        // March down from the top: the first point inside the shape is what we see.
+        for (let dz = hMax; dz >= 0; dz -= 0.5) {
+          const sy = (py + 0.5 - this.oy + z + dz) / hh;
+          const X = (sx + sy) / 2;
+          const Y = (sy - sx) / 2;
+          if (X < x0 || X > x1 || Y < y0 || Y > y1) continue;
+          const here = h(X, Y);
+          if (here <= 0 || here < dz) continue;
+          // Slope toward +x / +y (pixels of height per tile).
+          const gx = (h(X + eps, Y) - h(X - eps, Y)) / (2 * eps);
+          const gy = (h(X, Y + eps) - h(X, Y - eps)) / (2 * eps);
+          const wall = here - dz > 1.5; // hit a vertical side below the rim
+          let face = 1;
+          if (wall || Math.hypot(gx, gy) > 40) face = -gy >= -gx ? 2 : 3;
+          mask[py * this.width + px] = face;
+          break;
+        }
+      }
+    }
+    for (let py = top; py < bottom; py++) {
+      for (let px = left; px < right; px++) {
+        const face = mask[py * this.width + px];
+        if (!face) continue;
+        const at = (dx: number, dy: number) => {
+          const qx = px + dx;
+          const qy = py + dy;
+          return qx < 0 || qy < 0 || qx >= this.width || qy >= this.height ? 0 : mask[qy * this.width + qx];
+        };
+        const silhouette = !at(1, 0) || !at(-1, 0) || !at(0, 1) || !at(0, -1);
+        if (silhouette) this.set(px, py, c.outline);
+        else if (face === 1 && (at(0, 1) ?? 0) > 1 && c.edge !== undefined) this.set(px, py, c.edge);
+        else this.set(px, py, face === 1 ? c.top : face === 2 ? c.left : c.right);
+      }
+    }
+  }
+
   /** Pixel position of a local world point (for placing details). */
   at(x: number, y: number, z = 0): { x: number; y: number } {
     return {

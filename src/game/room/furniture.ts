@@ -44,6 +44,12 @@ const RENDER: Record<FurnitureId, Pick<FurnitureDef, 'height' | 'light' | 'scree
   plant: { height: 40 },
   table: { height: 22 },
   cushion: { height: 8 },
+  sofa: { height: 26 },
+  vanity: { height: 54 },
+  wardrobe: { height: 75 },
+  round_table: { height: 28 },
+  beanbag: { height: 19 },
+  mirror: { height: 64 },
   rug: { height: 2 },
 };
 
