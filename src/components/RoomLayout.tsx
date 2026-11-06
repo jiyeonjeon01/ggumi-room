@@ -11,6 +11,8 @@ interface Props {
   friends: (close?: () => void) => ReactNode;
   /** Pending incoming friend requests, shown as a badge. */
   badge: number;
+  /** Unread friend chat messages, shown as a second (chat) badge. */
+  unread?: number;
   /** Keyboard hints under the game (desktop/tablet only). */
   footer: ReactNode;
   /** While decorating: tools under the game on tablet/mobile (replaces the hints/tab bar). */
@@ -27,7 +29,7 @@ interface Props {
  * - mobile (< 768): bottom tab bar under the game, panels as bottom sheets.
  * The game area flexes; Phaser re-fits the room on resize.
  */
-export function RoomLayout({ children, my, friends, badge, footer, editBar, editing = false }: Props) {
+export function RoomLayout({ children, my, friends, badge, unread = 0, footer, editBar, editing = false }: Props) {
   const mode = useLayoutMode();
   const [leftCollapsed, setLeftCollapsed] = useStoredFlag('ggumi:ui:left-collapsed', false);
   const [rightCollapsed, setRightCollapsed] = useStoredFlag('ggumi:ui:right-collapsed', false);
@@ -55,7 +57,7 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar, edit
             {my()}
           </SidePanel>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-          <SidePanel side="right" title="친구" icon="👥" width="w-[300px]" badge={badge} collapsed={rightCollapsed} onToggle={() => setRightCollapsed(!rightCollapsed)}>
+          <SidePanel side="right" title="친구" icon="👥" width="w-[300px]" badge={badge} unread={unread} collapsed={rightCollapsed} onToggle={() => setRightCollapsed(!rightCollapsed)}>
             {friends()}
           </SidePanel>
         </div>
@@ -70,7 +72,7 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar, edit
         <div className="flex min-h-0 flex-1 gap-3">
           <nav aria-label="메뉴" className="flex w-[60px] shrink-0 flex-col items-center gap-2 rounded-[28px] bg-white/70 py-3 shadow-sm ring-1 ring-blush-200">
             <RailButton icon="👤" label="내 정보" expanded={open === 'my'} onClick={() => setOpen(open === 'my' ? null : 'my')} />
-            <RailButton icon="👥" label="친구" badge={badge} expanded={open === 'friends'} onClick={() => setOpen(open === 'friends' ? null : 'friends')} />
+            <RailButton icon="👥" label="친구" badge={badge + unread} expanded={open === 'friends'} onClick={() => setOpen(open === 'friends' ? null : 'friends')} />
           </nav>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
         </div>
@@ -90,7 +92,7 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar, edit
       {editBar}
       <nav hidden={!!editBar} aria-label="메뉴" className="grid shrink-0 grid-cols-2 gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
         <TabButton icon="👤" label="내 정보" expanded={open === 'my'} onClick={() => setOpen('my')} />
-        <TabButton icon="👥" label="친구" badge={badge} expanded={open === 'friends'} onClick={() => setOpen('friends')} />
+        <TabButton icon="👥" label="친구" badge={badge} unread={unread} expanded={open === 'friends'} onClick={() => setOpen('friends')} />
       </nav>
       {open && (
         <Modal title={open === 'my' ? '내 정보' : '친구'} onClose={close}>
@@ -98,6 +100,15 @@ export function RoomLayout({ children, my, friends, badge, footer, editBar, edit
         </Modal>
       )}
     </>
+  );
+}
+
+function ChatBadge({ count }: { count: number }) {
+  if (!count) return null;
+  return (
+    <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-lavender-100 px-1.5 text-[11px] leading-5 text-plum-700 ring-1 ring-blush-200" aria-label={`읽지 않은 메시지 ${count}개`}>
+      💬{count > 99 ? '99+' : count}
+    </span>
   );
 }
 
@@ -116,6 +127,7 @@ function SidePanel({
   icon,
   width,
   badge = 0,
+  unread = 0,
   collapsed,
   locked = false,
   onToggle,
@@ -126,6 +138,7 @@ function SidePanel({
   icon: string;
   width: string;
   badge?: number;
+  unread?: number;
   collapsed: boolean;
   /** Can't be collapsed right now (no toggle button). */
   locked?: boolean;
@@ -147,6 +160,7 @@ function SidePanel({
           <span aria-hidden className="text-lg">{icon}</span>
           <span className="sr-only">{title} 펼치기</span>
           {badge > 0 && <Badge count={badge} />}
+          <ChatBadge count={unread} />
         </button>
       </aside>
     );
@@ -162,6 +176,7 @@ function SidePanel({
           <span aria-hidden className="mr-1">{icon}</span>
           {title}
           <Badge count={badge} />
+          <ChatBadge count={unread} />
         </h2>
         {!locked && (
           <button
@@ -202,7 +217,7 @@ function RailButton({ icon, label, badge = 0, expanded, onClick }: { icon: strin
   );
 }
 
-function TabButton({ icon, label, badge = 0, expanded, onClick }: { icon: string; label: string; badge?: number; expanded: boolean; onClick: () => void }) {
+function TabButton({ icon, label, badge = 0, unread = 0, expanded, onClick }: { icon: string; label: string; badge?: number; unread?: number; expanded: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -213,6 +228,7 @@ function TabButton({ icon, label, badge = 0, expanded, onClick }: { icon: string
       <span aria-hidden className="mr-1">{icon}</span>
       {label}
       <Badge count={badge} />
+      <ChatBadge count={unread} />
     </button>
   );
 }

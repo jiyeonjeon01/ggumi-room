@@ -129,3 +129,28 @@ export interface InvitePreview {
   room_name: string | null;
   expires_at: string | null;
 }
+
+/** A stored 1:1 message (seq orders messages and read receipts). */
+export interface DirectMessage {
+  id: string;
+  seq: number;
+  sender_id: string;
+  recipient_id: string;
+  body: string;
+  client_id: string;
+  created_at: string;
+}
+
+export interface MessageHistory {
+  messages: DirectMessage[];
+  has_more: boolean;
+  my_read_seq: number;
+  peer_read_seq: number;
+}
+
+export interface ConversationSummary {
+  friend: PublicUser;
+  last_message: DirectMessage | null;
+  unread: number;
+  peer_read_seq: number;
+}

@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
+    Identity,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -184,3 +186,46 @@ class RoomGuest(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
     invitation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("room_invitations.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created()
+
+
+class Conversation(Base):
+    """A 1:1 chat between two users, stored once per pair with user_a_id < user_b_id.
+
+    Read state is kept per side as the highest message seq that side has seen.
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = _id()
+    user_a_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_b_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at: Mapped[datetime] = _created()
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    a_read_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    b_read_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+
+    __table_args__ = (
+        CheckConstraint("user_a_id < user_b_id", name="conversations_ordered_pair"),
+        Index("conversations_pair", "user_a_id", "user_b_id", unique=True),
+    )
+
+
+class Message(Base):
+    """One chat message. `seq` orders messages (and read receipts) across the whole table."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = _id()
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(always=True), nullable=False, unique=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    sender_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Random id from the sending client, so a retried send doesn't store the message twice.
+    client_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        CheckConstraint("char_length(body) BETWEEN 1 AND 500", name="messages_body_length"),
+        Index("messages_conversation_seq", "conversation_id", "seq"),
+        Index("messages_sender_client", "sender_id", "client_id", unique=True),
+    )

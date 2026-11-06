@@ -48,7 +48,7 @@ React 19 · TypeScript 7 (strict) · Vite 8 · Phaser 4 · Tailwind CSS 4 · pnp
 
 - **React**: 페이지 UI(헤더, 테마 전환, 방 이름, 조작 안내). 게임 프레임마다 리렌더링하지 않습니다.
 - **Phaser**: 방 렌더링, 캐릭터 이동·애니메이션, 입력 처리.
-- **FastAPI + PostgreSQL**(`api/`): 계정·친구·초대·가구 배치, 실시간 WebSocket(`/ws/live`, [docs/REALTIME.md](docs/REALTIME.md)). 상태 관리 라이브러리 없음.
+- **FastAPI + PostgreSQL**(`api/`): 계정·친구·초대·가구 배치·1:1 채팅, 실시간 WebSocket(`/ws/live`: 같은 방 동기화, 친구 접속 상태, 채팅 전달·입력 중·읽음 — [docs/REALTIME.md](docs/REALTIME.md)). 상태 관리 라이브러리 없음.
 
 ## 구조
 
@@ -225,7 +225,7 @@ src/
 1. 실제 픽셀아트 에셋 제작 및 Preloader 씬 추가
 2. 가구 배치 에디터 (격자 스냅, 충돌 검사는 `CollisionWorld` 재사용)
 3. 방 데이터 저장(백엔드) → 친구 방 방문
-4. ~~WebSocket 멀티플레이어~~ — 같은 방 실시간 동기화 구현 ([docs/REALTIME.md](docs/REALTIME.md))
+4. ~~WebSocket 멀티플레이어~~ — 같은 방 실시간 동기화, 친구 접속 상태, 친구 1:1 채팅 구현 ([docs/REALTIME.md](docs/REALTIME.md))
 5. 채팅 말풍선, 방명록, BGM
 
 ## 채팅 (로컬 말풍선)

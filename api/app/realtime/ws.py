@@ -212,6 +212,8 @@ async def _handle(conn: Conn, msg: dict[str, Any]) -> None:
     elif t == "presence.sync":
         friends = await run_in_threadpool(friend_ids, conn.user_id)
         hub.send(conn, {"t": "presence.list", "presence": hub.presence_list(friends)})
+    elif t == "dm.typing":
+        await hub.dm_typing(conn, msg.get("to"), msg.get("on"))
     elif t == "leave":
         await hub.leave_room(conn)
     elif t == "move":

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
+import { ChatProvider, useChat } from './app/chat';
 import { LiveProvider } from './app/live';
 import { useRoomLive } from './app/roomLive';
 import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
+import { ChatWindow } from './components/ChatWindow';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
@@ -33,7 +35,10 @@ export default function App() {
     <AuthProvider>
       <LiveProvider>
         <ToastProvider>
-          <Pages />
+          <ChatProvider>
+            <Pages />
+            <ChatWindow />
+          </ChatProvider>
         </ToastProvider>
       </LiveProvider>
     </AuthProvider>
@@ -254,6 +259,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
   const { me } = useAuth();
   const toast = useToast();
   const { incomingCount } = useFriends();
+  const { totalUnread } = useChat();
   const isOwner = info.access === 'owner';
   const nickname = me?.nickname ?? DEMO_ROOM.owner;
 
@@ -418,6 +424,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
       editBar={editorProps && <EditBar {...editorProps} />}
       panels={{
         badge: incomingCount,
+        unread: totalUnread,
         my: (close) =>
           editorProps ? (
             <EditorPanel {...editorProps} />
@@ -514,6 +521,7 @@ function RoomScreen({
   /** Logged-in rooms: side panels / rail / tabs around the game (see RoomLayout). */
   panels?: {
     badge: number;
+    unread?: number;
     my: (close?: () => void) => ReactNode;
     friends: (close?: () => void) => ReactNode;
   };
@@ -599,7 +607,7 @@ function RoomScreen({
     // Theme buttons live in the left panel here, not in the header.
     return (
       <Layout>
-        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} footer={footer} editBar={editBar} editing={editing}>
+        <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} unread={panels.unread} footer={footer} editBar={editBar} editing={editing}>
           {stage}
         </RoomLayout>
       </Layout>

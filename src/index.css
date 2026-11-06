@@ -12,6 +12,12 @@
   size-adjust: 118%;
 }
 
+/* Friend chat: "입력 중" dots rising one after another. */
+@keyframes ggumi-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
 @theme {
   --font-sans: "omyu pretty", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --font-mono: "omyu pretty", ui-monospace, monospace;

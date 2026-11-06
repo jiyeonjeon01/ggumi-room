@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, type SearchResult } from '../api/client';
+import { useChat } from '../app/chat';
 import { useFriends } from '../app/friends';
 import { useLive } from '../app/live';
 import type { Presence } from '../net/activity';
@@ -19,6 +20,7 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const toast = useToast();
   const { friends, requests, incomingCount, run } = useFriends();
   const { presence } = useLive();
+  const chat = useChat();
   // Online first, then away, then offline (unknown status keeps the server order).
   const rank = (id: string) => ({ online: 0, away: 1, offline: 2 })[presence[id] ?? 'offline'];
   const sorted = friends && [...friends].sort((a, b) => rank(a.id) - rank(b.id));
@@ -75,6 +77,20 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
           {friends?.length === 0 && <Empty>아직 친구가 없어요. ‘친구 찾기’에서 닉네임으로 찾아보세요.</Empty>}
           {sorted?.map((f) => (
             <Row key={f.id} nickname={f.nickname} sub={joinedLabel(f.joined_at)} status={presence[f.id] ?? null}>
+              <button
+                type="button"
+                onClick={() => (onNavigate?.(), chat.openChat({ id: f.id, nickname: f.nickname }))}
+                aria-label={`${f.nickname}님과 채팅${chat.unread[f.id] ? `, 읽지 않은 메시지 ${chat.unread[f.id]}개` : ''}`}
+                title="채팅"
+                className="relative rounded-full px-2 py-1 text-base hover:bg-blush-100"
+              >
+                <span aria-hidden>💬</span>
+                {!!chat.unread[f.id] && (
+                  <span aria-hidden className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-blush-500 px-1 text-[10px] leading-4 text-white">
+                    {chat.unread[f.id]! > 99 ? '99+' : chat.unread[f.id]}
+                  </span>
+                )}
+              </button>
               {f.room_id && (
                 <Button className="px-3 py-1" onClick={() => (onNavigate?.(), navigate(`/room/${f.room_id}`))}>
                   놀러 가기
@@ -182,16 +198,18 @@ const PRESENCE: Record<Presence, { label: string; dot: string }> = {
 function Row({ nickname, sub, status, children }: { nickname: string; sub: string; status?: Presence | null; children: ReactNode }) {
   const p = status ? PRESENCE[status] : null;
   return (
-    <li className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 ring-1 ring-blush-100">
+    // Name keeps at least ~7 characters of room; when the buttons don't fit next to it they move
+    // to a second line instead of squeezing the name into one syllable per line.
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-white px-3 py-2 ring-1 ring-blush-100">
       <span aria-hidden className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-lavender-100 text-sm text-plum-700">
         {Array.from(nickname)[0]}
         {status !== undefined && (
           <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${p ? p.dot : 'border-2 border-gray-300 bg-white'}`} />
         )}
       </span>
-      <span className="min-w-0 flex-1">
+      <span className="min-w-[7.5rem] flex-1">
         <span className="block truncate text-plum-700">{nickname}</span>
-        <span className="block text-xs text-plum-500">
+        <span className="block truncate text-xs text-plum-500">
           {status !== undefined && (
             <span data-presence={status ?? 'unknown'} className={status === 'online' ? 'text-emerald-600' : status === 'away' ? 'text-amber-600' : undefined}>
               {p ? p.label : '상태 확인 중'} ·{' '}
@@ -200,7 +218,7 @@ function Row({ nickname, sub, status, children }: { nickname: string; sub: strin
           {sub}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-1">{children}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap">{children}</span>
     </li>
   );
 }

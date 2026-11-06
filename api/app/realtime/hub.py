@@ -98,6 +98,7 @@ class Conn:
     # Last real user input reported by this tab (not heartbeats).
     active_at: float = field(default_factory=lambda: now())
     activities: Bucket = field(default_factory=lambda: Bucket(10, 60.0))
+    typings: Bucket = field(default_factory=lambda: Bucket(20, 10.0))
 
 
 @dataclass(eq=False)
@@ -370,6 +371,33 @@ class Hub:
             if not room.geometry.is_free(m.x, m.y, r * 0.9):
                 m.x, m.y = room.geometry.nearest_free(m.x, m.y, r)
         self.broadcast(room, {"t": "room.layout", "version": version, "items": items})
+
+    # ------------------------------------------------------------ 1:1 messages
+
+    def to_users(self, user_ids: list[uuid.UUID], msg: dict[str, Any]) -> None:
+        for uid in dict.fromkeys(user_ids):
+            for c in self.user_conns(uid):
+                self.send(c, msg)
+
+    def dm_new(self, user_ids: list[uuid.UUID], message: dict[str, Any]) -> None:
+        """A stored message: to the recipient's tabs and the sender's other tabs (all of them; the sender's own tab dedupes)."""
+        self.to_users(user_ids, {"t": "dm.new", "message": message})
+
+    def dm_read(self, reader: uuid.UUID, peer: uuid.UUID, seq: int) -> None:
+        """`reader` has seen `peer`'s messages up to `seq` (dark checks for the peer, cleared badges on the reader's other tabs)."""
+        self.to_users([reader, peer], {"t": "dm.read", "reader": str(reader), "peer": str(peer), "seq": seq})
+
+    async def dm_typing(self, conn: Conn, to: Any, on: Any) -> None:
+        """Typing indicator, relayed to a friend only. Nothing is stored; no text is carried."""
+        if not conn.typings.allow():
+            return
+        try:
+            target = uuid.UUID(str(to))
+        except ValueError:
+            return
+        if target not in await run_in_threadpool(self.friend_ids, conn.user_id):
+            return
+        self.to_users([target], {"t": "dm.typing", "from": str(conn.user_id), "on": on is True})
 
     def theme_changed(self, room_id: uuid.UUID, theme: str) -> None:
         room = self.rooms.get(room_id)
