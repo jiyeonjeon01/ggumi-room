@@ -22,7 +22,10 @@ x-hardening: &hardening
 
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        REQUIRE_FONT: "1" # the font (git-ignored) must be in public/fonts/
     image: ggumiroom-web:latest
     restart: unless-stopped
     <<: *hardening
@@ -66,6 +69,8 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
       EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-}
+      # Set while testing in production so only testers can sign up.
+      SIGNUP_CODE: ${SIGNUP_CODE:-}
     ports:
       # Host 9201 (localhost only) for direct API checks; public traffic goes web(nginx) -> api:8000.
       - "127.0.0.1:${API_PORT:-9201}:8000"

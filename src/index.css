@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
-/* 오뮤 다예쁨체 (omyu pretty), converted from the original TTF to WOFF2 with all glyphs. */
+/* 오뮤 다예쁨체 (omyu pretty): the maker's original TTF, served unmodified. */
 @font-face {
   font-family: "omyu pretty";
-  src: url("/fonts/omyu-pretty.woff2") format("woff2");
+  src: url("/fonts/omyu-pretty.ttf") format("truetype");
   font-weight: normal;
   font-style: normal;
   font-display: swap;
