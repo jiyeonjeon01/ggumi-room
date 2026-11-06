@@ -199,15 +199,34 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
 # 끄기: 같은 명령에서 up -d --build 대신 down (데이터 유지) / down -v (데이터 삭제)
 ```
 
-### 운영 반영 절차 (아직 하지 않음)
+### 테스트 기간 가입 제한 (`SIGNUP_CODE`)
 
-1. 반영 직전에 기존 운영 상태를 기록합니다: `git rev-parse HEAD`, `docker image ls ggumiroom-web`.
-2. `.env`에 `POSTGRES_PASSWORD`(긴 무작위 값)를 추가합니다. `API_PORT=9201`도 확인합니다.
-3. `docker compose --profile tunnel up -d --build` 실행.
+`.env`에 `SIGNUP_CODE`를 넣으면 가입할 때 그 코드를 적어야 합니다 (테스트 참가자에게만 따로 알려 줌).
+
+- 서버가 확인하므로 화면을 건너뛰고 API를 직접 불러도 코드가 없으면 거절됩니다 (422, 가입 요청은 IP당 시간당 10회 제한).
+- 로그인·기존 계정에는 영향이 없습니다.
+- 코드가 켜져 있는 동안 화면에서 가입을 홍보하지 않습니다: 상단 **회원가입** 버튼과 "가입하면 …" 안내가 숨겨지고, 로그인 버튼만 보입니다. 가입 화면(`/signup`)은 로그인 화면의 링크나 초대 링크로만 들어갑니다.
+- `robots.txt`가 `/login`, `/signup`, `/invite/`, `/room/`, `/api/`의 검색 노출을 막습니다.
+- 정식 공개 때: `.env`에서 `SIGNUP_CODE`를 지우고 `docker compose --profile tunnel up -d api`.
+- 코드 바꾸기: `.env` 수정 후 같은 명령. 값은 채팅·Git에 올리지 않습니다.
+
+### 운영 반영 절차
+
+1. 반영 직전 상태를 기록하고 되돌릴 이미지를 남깁니다.
+   ```powershell
+   git rev-parse HEAD
+   docker tag ggumiroom-web:latest ggumiroom-web:rollback-YYYYMMDD   # 빌드가 latest를 덮어쓰기 전에
+   ```
+2. DB가 이미 있으면 백업합니다 (아래 "DB 백업·복원"). 처음 반영할 때는 DB가 없으므로 백업할 데이터가 없습니다.
+3. `.env`에 `POSTGRES_PASSWORD`(긴 무작위 값), 필요하면 `SIGNUP_CODE`를 넣습니다. `API_PORT=9201` 확인.
+4. `docker compose --profile tunnel up -d --build`
    - web 컨테이너가 새 이미지로 바뀌는 몇 초 동안 사이트가 잠깐 끊길 수 있습니다.
-   - db·api가 새로 생기고, 첫 실행 때 마이그레이션이 적용됩니다.
-4. 확인: `https://www.ggumiroom.com/api/health` → `{"status":"ok","db":"ok"}`, 가입·로그인 후 새로고침해도 로그인 유지(운영 HTTPS에서 Secure 쿠키), 초대 링크 주소가 `https://www.ggumiroom.com/invite/...`인지.
-5. 되돌리기: 이전 커밋으로 `docker compose --profile tunnel up -d --build web`(프론트 원복), `docker compose stop api db`(데이터는 볼륨에 남음).
+   - api가 시작할 때 `alembic upgrade head`로 마이그레이션을 적용합니다 (`api/Dockerfile`의 CMD).
+5. 확인: `https://www.ggumiroom.com/api/health` → `{"status":"ok","db":"ok"}`, 가입·로그인 후 새로고침해도 로그인 유지(Secure 쿠키), 초대 링크가 `https://www.ggumiroom.com/invite/...`인지, `docker compose logs api web`에 오류가 없는지.
+6. 되돌리기
+   - 프론트: `docker tag ggumiroom-web:rollback-YYYYMMDD ggumiroom-web:latest` → `docker compose --profile tunnel up -d --no-build web`
+   - API·DB 끄기: `docker compose stop api` (이전 프론트는 `/api`를 쓰지 않음, DB 데이터는 `db-data` 볼륨에 남음)
+   - 마이그레이션만 되돌리기: 백업 후 `docker compose exec api alembic downgrade <리비전>`
 
 ### 마이그레이션 기록
 

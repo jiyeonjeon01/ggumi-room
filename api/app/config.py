@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # OpenAPI docs at /api/docs. Off in production.
     enable_docs: bool = False
     rate_limit_enabled: bool = True
+    # While testing in production: sign-up needs this code (empty = open sign-up).
+    # Login and existing accounts are not affected.
+    signup_code: str = ""
 
     @property
     def allowed_origins(self) -> set[str]:

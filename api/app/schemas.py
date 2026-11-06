@@ -16,6 +16,7 @@ class SignupIn(BaseModel):
     login_id: str = Field(max_length=64)
     password: str = Field(max_length=256)
     password_confirm: str = Field(max_length=256)
+    signup_code: str = Field(default="", max_length=128)
 
 
 class LoginIn(BaseModel):

@@ -153,3 +153,25 @@ def test_secure_cookie_flag_when_enabled(monkeypatch, api):
 def test_openapi_under_api_prefix(api):
     spec = api.get("/api/openapi.json").json()
     assert "/api/auth/signup" in spec["paths"] and "/api/invites/{token}" in spec["paths"]
+
+
+def test_signup_code_gates_new_accounts_but_not_login(api, monkeypatch):
+    from app.config import get_settings
+
+    assert api.signup(login_id="early01").status_code == 201  # account made before the gate
+    monkeypatch.setattr(get_settings(), "signup_code", "tester-pass-77")
+    assert api.get("/api/auth/signup-config").json() == {"code_required": True}
+
+    guest = Api()
+    body = {"nickname": "테스터", "login_id": "tester01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026"}
+    for code in (None, "", "wrong-code"):
+        r = guest.post("/api/auth/signup", json=body | ({} if code is None else {"signup_code": code}))
+        assert r.status_code == 422 and r.json()["detail"]["field"] == "signup_code"
+    assert guest.post("/api/auth/signup", json=body | {"signup_code": " tester-pass-77 "}).status_code == 201
+
+    # Existing accounts still log in.
+    other = Api()
+    assert other.post("/api/auth/login", json={"login_id": "early01", "password": "cozy-room-2026"}).status_code == 200
+
+    monkeypatch.setattr(get_settings(), "signup_code", "")
+    assert api.get("/api/auth/signup-config").json() == {"code_required": False}

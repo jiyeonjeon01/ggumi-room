@@ -105,7 +105,7 @@ function Layout({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
 }
 
 function AccountMenu() {
-  const { state, logout } = useAuth();
+  const { state, signupCodeRequired, logout } = useAuth();
   const toast = useToast();
   if (state.status === 'loading') return null;
   if (state.status === 'guest') {
@@ -115,9 +115,12 @@ function AccountMenu() {
         <Button variant="soft" className="px-3 py-1.5" onClick={() => navigate('/login')}>
           로그인
         </Button>
-        <Button className="px-3 py-1.5" onClick={() => navigate('/signup')}>
-          회원가입
-        </Button>
+        {/* Test period (sign-up code set): don't advertise sign-up. */}
+        {signupCodeRequired === false && (
+          <Button className="px-3 py-1.5" onClick={() => navigate('/signup')}>
+            회원가입
+          </Button>
+        )}
       </div>
     );
   }
@@ -166,6 +169,7 @@ function NotFound() {
 /** Not logged in: the original demo room, as before (theme changes stay local). */
 function DemoScreen() {
   const [theme, setTheme] = useState<ThemeId>(DEMO_ROOM.theme);
+  const { signupCodeRequired } = useAuth();
   return (
     <RoomScreen
       room={DEMO_ROOM}
@@ -174,7 +178,13 @@ function DemoScreen() {
       subtitle={`${THEMES[theme].label} · 둘러보기`}
       banner={
         <>
-          둘러보기 중이에요. <b className="font-normal text-blush-500">가입하면 내 이름표와 내 방</b>이 생겨요.
+          둘러보기 중이에요.
+          {signupCodeRequired === false && (
+            <>
+              {' '}
+              <b className="font-normal text-blush-500">가입하면 내 이름표와 내 방</b>이 생겨요.
+            </>
+          )}
         </>
       }
     />

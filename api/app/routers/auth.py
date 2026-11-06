@@ -1,9 +1,12 @@
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
+from ..config import get_settings
 from ..db import get_db, utcnow
 from ..deps import (
     SESSION_COOKIE,
@@ -59,9 +62,18 @@ def check_login_id(login_id: str, request: Request, db: Session = Depends(get_db
     return LoginIdCheckOut(available=not taken, message="이미 사용 중인 아이디예요." if taken else "사용할 수 있는 아이디예요.")
 
 
+@router.get("/signup-config")
+def signup_config() -> dict:
+    """Whether the sign-up form must ask for a sign-up code (test period)."""
+    return {"code_required": bool(get_settings().signup_code)}
+
+
 @router.post("/signup", response_model=MeOut, status_code=status.HTTP_201_CREATED)
 def signup(body: SignupIn, request: Request, response: Response, db: Session = Depends(get_db)) -> MeOut:
     ratelimit.hit(f"signup:{client_ip(request)}", 10, 3600)
+    code = get_settings().signup_code
+    if code and not hmac.compare_digest(body.signup_code.strip().encode(), code.encode()):
+        raise _bad("signup_code", "가입 코드가 맞지 않아요. 지금은 테스트 참가자만 가입할 수 있어요.")
     nickname = normalize_nickname(body.nickname)
     login_id = normalize_login_id(body.login_id)
     if err := nickname_error(nickname):
