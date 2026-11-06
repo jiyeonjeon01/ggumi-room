@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .deps import csrf_protect
+from .realtime import ws as realtime
 from .routers import auth, friends, invites, rooms
 
 settings = get_settings()
@@ -30,6 +31,8 @@ def health(db: Session = Depends(get_db)) -> dict:
 for r in (auth.router, rooms.router, friends.router, invites.router):
     api.include_router(r)
 app.include_router(api)
+# WebSocket at /ws/live: checks Origin and the session cookie itself (see realtime/ws.py).
+app.include_router(realtime.router)
 
 
 @app.middleware("http")

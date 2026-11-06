@@ -9,6 +9,7 @@ from ..access import room_access
 from ..db import get_db
 from ..deps import current_user
 from ..models import Room, RoomItem, User
+from ..realtime.hub import hub, notify
 from ..schemas import LayoutIn, RoomItemOut, RoomOut, RoomPatchIn
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
@@ -81,6 +82,8 @@ def patch_room(
     if body.theme is not None:
         room.theme = body.theme
     db.commit()
+    if body.theme is not None:
+        notify(hub.theme_changed, room.id, room.theme)
     return room_out(db, room, user, "owner")
 
 
@@ -111,4 +114,6 @@ def save_layout(
     write_items(db, room, items)
     room.layout_version += 1
     db.commit()
+    # Visitors see the new layout and the server checks movement against it.
+    notify(hub.layout_changed, room.id, room.layout_version, [dict(i) for i in items])
     return room_out(db, room, user, "owner")

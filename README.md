@@ -48,7 +48,7 @@ React 19 · TypeScript 7 (strict) · Vite 8 · Phaser 4 · Tailwind CSS 4 · pnp
 
 - **React**: 페이지 UI(헤더, 테마 전환, 방 이름, 조작 안내). 게임 프레임마다 리렌더링하지 않습니다.
 - **Phaser**: 방 렌더링, 캐릭터 이동·애니메이션, 입력 처리.
-- 백엔드·DB·인증·WebSocket 없음. 상태 관리 라이브러리 없음.
+- **FastAPI + PostgreSQL**(`api/`): 계정·친구·초대·가구 배치, 실시간 WebSocket(`/ws/live`, [docs/REALTIME.md](docs/REALTIME.md)). 상태 관리 라이브러리 없음.
 
 ## 구조
 
@@ -225,12 +225,12 @@ src/
 1. 실제 픽셀아트 에셋 제작 및 Preloader 씬 추가
 2. 가구 배치 에디터 (격자 스냅, 충돌 검사는 `CollisionWorld` 재사용)
 3. 방 데이터 저장(백엔드) → 친구 방 방문
-4. WebSocket 멀티플레이어(소셜룸) — 원격 `Avatar`를 위치 보간으로 구동
+4. ~~WebSocket 멀티플레이어~~ — 같은 방 실시간 동기화 구현 ([docs/REALTIME.md](docs/REALTIME.md))
 5. 채팅 말풍선, 방명록, BGM
 
 ## 채팅 (로컬 말풍선)
 
-DB·WebSocket 없이 브라우저 안에서만 동작합니다. 새로고침하면 사라지고 아무 데도 저장하지 않습니다.
+로그인한 방에서는 같은 방의 다른 사람에게도 실시간으로 보입니다(WebSocket, 저장하지 않음). 로그인하지 않은 데모 방에서는 브라우저 안에서만 동작합니다.
 
 - **흐름**: `ChatBar`(React) → `GameHandle.sendChat` → `normalizeChat`(공백 정리, 빈 메시지 거부, 24자 제한) → `ChatTransport.send` → `onMessage` → `RoomScene.showChat` → `SpeechBubble`.
 - **전송과 표시 분리**: 말풍선은 `ChatMessage`만 받습니다. 지금은 `LocalChatTransport`가 보낸 메시지를 그대로 되돌려 주고, 나중에 `createGame.ts`에서 `WebSocketChatTransport`로 바꾸면 다른 플레이어의 메시지도 같은 경로로 들어옵니다. 서버는 클라이언트가 보낸 `playerId`·`createdAt`을 믿지 말고 인증 정보와 서버 시각으로 다시 채워야 합니다.
@@ -245,7 +245,7 @@ DB·WebSocket 없이 브라우저 안에서만 동작합니다. 새로고침하�
 |---|---|
 | `/` | 로그인 전: 기존 데모 방 그대로(이름표 '꾸미'). 로그인 후: 내 방(이름표 = 내 닉네임, 테마 저장) |
 | `/signup`, `/login` | 닉네임·아이디·비밀번호·확인 4칸 / 아이디·비밀번호. `?next=`는 앱 안 경로만 허용 |
-| `/room/{id}` | 친구 방 또는 초대받은 방. 혼자 둘러보기만 가능하고, 실시간 함께 놀기는 미구현이라고 안내 |
+| `/room/{id}` | 친구 방 또는 초대받은 방. 같은 방에 있는 사람의 캐릭터·이동·말풍선이 실시간으로 보임 (가구 편집은 주인만) |
 | `/invite/{token}` | 로그인 없이 보이는 초대장. 가입·로그인 후 그 방으로 이동 (초대 맥락은 sessionStorage에 보관) |
 | 방 안 `👥 친구` | 친구 목록(놀러 가기·삭제), 받은/보낸 요청(수락·거절·취소), 닉네임 검색 |
 | 방 안 `💌 친구 초대하기` | 초대 링크를 클립보드에 복사 (7일 유효, 같은 링크 재사용) |

@@ -44,3 +44,12 @@ def reset() -> None:
     """Tests only."""
     with _lock:
         _hits.clear()
+
+
+def allow(key: str, limit: int, window_s: float) -> bool:
+    """Like hit() but returns False instead of raising (WebSocket handshakes can't use HTTP errors)."""
+    try:
+        hit(key, limit, window_s)
+    except HTTPException:
+        return False
+    return True

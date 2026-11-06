@@ -24,7 +24,7 @@
 
 - 공유기 포트포워딩 없음, 집 공인 IP를 DNS에 올리지 않음 (cloudflared가 바깥으로 연결을 엶)
 - Cloudflare에는 소스코드·DB를 올리지 않음. Cloudflare 전용 SDK도 쓰지 않음
-- 나중에 `/api/*`, `/ws/*` → FastAPI, PostgreSQL은 Docker 내부 네트워크 전용
+- `/api/*`, `/ws/*` → FastAPI (nginx가 전달), PostgreSQL은 Docker 내부 네트워크 전용
 
 ## 폰트 (저장소에 포함하지 않음)
 
@@ -172,7 +172,7 @@ nslookup -type=NS ggumiroom.com 8.8.8.8
 - nginx는 api를 요청 시점에 찾기 때문에, api가 꺼져 있어도 게임은 뜨고 `/api`만 JSON 503을 돌려줍니다.
 - db는 포트를 열지 않고 `backend`(internal) 네트워크에만 붙습니다. 데이터는 `db-data` 볼륨에 남습니다.
 - 접속 로그는 nginx만 남기고(쿼리스트링 제외), uvicorn 접속 로그는 끕니다 (아이디가 담긴 쿼리가 남지 않게).
-- `/ws/*`는 아직 404입니다 (실시간 기능 미구현).
+- `/ws/live`: 실시간 WebSocket. nginx가 `Upgrade`를 붙여 `api:8000`으로 넘기고, Origin·세션 검사는 API가 합니다. 이벤트와 제한은 [REALTIME.md](REALTIME.md).
 
 ### 개발 환경 (프론트 9020, API 9200)
 

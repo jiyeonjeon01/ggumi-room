@@ -1,6 +1,8 @@
 {
   "$comment": "Furniture catalog and layout rules shared by the web app (src/game/room) and the API (api/app/layout.py). Sizes are the footprint in tiles for facing 0; facing 1 swaps w and h.",
-  "room": { "width": 9, "height": 8 },
+  "room": { "width": 9, "height": 8, "spawn": { "x": 7, "y": 5.5 } },
+  "$walkSpeed": "Character walking speed in tiles per second; the realtime server checks reported movement against it.",
+  "walkSpeed": 2.6,
   "grid": 0.25,
   "maxItems": 40,
   "playerRadius": 0.22,

@@ -23,4 +23,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
 
 # Apply pending migrations, then serve. One worker: the rate limiter is in-memory (app/ratelimit.py).
 # No access log here: nginx logs every request without query strings (which can hold login ids).
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --no-server-header --no-access-log --log-level info"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1 --ws-max-size 16384 --no-server-header --no-access-log --log-level info"]

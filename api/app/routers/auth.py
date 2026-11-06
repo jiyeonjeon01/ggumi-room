@@ -23,7 +23,8 @@ from ..layout import default_layout
 from ..models import Room, User
 from .rooms import write_items
 from ..schemas import LoginIdCheckOut, LoginIn, MeOut, SignupIn
-from ..security import hash_password, needs_rehash, verify_password
+from ..realtime.hub import hub, notify
+from ..security import hash_password, needs_rehash, token_hash, verify_password
 from ..validation import (
     login_id_error,
     nickname_error,
@@ -131,9 +132,13 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)) -> None:
-    delete_session(db, request.cookies.get(SESSION_COOKIE))
+    token = request.cookies.get(SESSION_COOKIE)
+    delete_session(db, token)
     db.commit()
     clear_session_cookie(response)
+    if token:
+        # Realtime connections opened with this session end right away.
+        notify(hub.close_sessions, {token_hash(token)})
 
 
 @router.get("/me", response_model=MeOut)

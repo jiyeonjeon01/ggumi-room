@@ -14,10 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
-from ..access import are_friends, lock_pair, pair
+from ..access import are_friends, lock_pair, pair, room_access
 from ..db import get_db, utcnow
 from ..deps import current_user
 from ..models import FriendRequest, Friendship, Room, User
+from ..realtime.hub import hub, notify
 from ..schemas import (
     FriendOut,
     FriendRequestIn,
@@ -234,3 +235,9 @@ def unfriend(friend_id: uuid.UUID, user: User = Depends(current_user), db: Sessi
     db.commit()
     if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="친구가 아니에요.")
+    # Whoever no longer has access (no invite either) steps out of the other's room.
+    other = db.get(User, friend_id)
+    for owner, visitor in ((user, other), (other, user)):
+        room = db.scalar(select(Room).where(Room.owner_id == owner.id, Room.is_default)) if owner and visitor else None
+        if room and room_access(db, room, visitor) is None:
+            notify(hub.drop_from_rooms, visitor.id, owner.id)
