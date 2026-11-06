@@ -104,8 +104,8 @@ export class LayoutEditor {
   }
 
   /**
-   * Turns the piece one step (90 degrees for four-way pieces, the other facing
-   * for two-way ones), keeping its center where it was (snapped), and pulled
+   * Turns the piece one step (90 degrees clockwise on screen; four turns come
+   * back around), keeping its center where it was (snapped), and pulled
    * back inside the room if the new shape sticks out.
    */
   rotate(uid: string): EditResult {

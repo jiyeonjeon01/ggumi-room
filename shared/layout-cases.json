@@ -92,7 +92,9 @@
       "error": null
     },
     { "name": "facing 3 swaps the footprint like facing 1", "items": [{ "type": "bed", "x": 7.5, "y": 0, "facing": 3 }], "error": "out_of_bounds" },
-    { "name": "two-way piece can't turn around", "items": [{ "type": "desk", "x": 1, "y": 1, "facing": 2 }], "error": "bad_facing" },
+    { "name": "every piece turns around (desk facing 2)", "items": [{ "type": "desk", "x": 1, "y": 1, "facing": 2 }], "error": null },
+    { "name": "facing 3 of a former two-way piece swaps the footprint", "items": [{ "type": "wardrobe", "x": 8.5, "y": 0, "facing": 3 }], "error": "out_of_bounds" },
+    { "name": "negative facing", "items": [{ "type": "rug", "x": 0, "y": 0, "facing": -1 }], "error": "bad_facing" },
     { "name": "no fifth facing", "items": [{ "type": "bed", "x": 0, "y": 0, "facing": 4 }], "error": "bad_facing" },
     { "name": "too many", "items": "many:41", "error": "too_many" }
   ]

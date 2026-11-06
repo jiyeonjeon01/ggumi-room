@@ -10,7 +10,8 @@ import type { Vec2 } from './iso';
 /**
  * 0 = as drawn, 1 = world x/y swapped (a quarter turn for pieces that are
  * symmetric left-right), 2 and 3 = 0 and 1 turned around (180 degrees).
- * Most pieces only use 0 and 1; see `rotation` in shared/furniture.json.
+ * Every piece turns through all four; `rotation` in shared/furniture.json
+ * gives the order.
  */
 export type Facing = 0 | 1 | 2 | 3;
 export type FurnitureType = keyof typeof catalog.items;

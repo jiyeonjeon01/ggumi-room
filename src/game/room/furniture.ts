@@ -6,10 +6,10 @@ import { catalogEntry, FURNITURE_TYPES, size, type Facing, type FurnitureType } 
  * come from the shared catalog (shared/furniture.json, also used by the API);
  * this adds what only the renderer needs: art height and light sources.
  *
- * Every piece has two facings. Facing 0 is the drawn orientation; facing 1 is
- * the same piece turned 90 degrees: footprint w/h swap and the art is redrawn
- * with world x and y swapped (not mirrored), so lit and shaded faces stay
- * where the light comes from.
+ * Every piece has four facings. Facing 0 is the drawn orientation; facing 1
+ * is the same piece with world x and y swapped (footprint w/h swap; redrawn,
+ * not mirrored, so lit and shaded faces stay where the light comes from);
+ * facings 2 and 3 are 0 and 1 turned around, showing the back.
  *
  * Sprite convention (also for future hand-made PNGs) — see spriteFrame():
  * the image is (w + h) * 16 + 2 px wide and (w + h) * 8 + height + 2 px tall,

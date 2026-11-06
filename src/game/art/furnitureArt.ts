@@ -10,7 +10,26 @@ import type { RoomTheme } from './themes';
  * Replace with real sprites by loading PNGs under the same texture keys and
  * following the sprite convention in room/furniture.ts.
  */
-type Draw = (pc: IsoCanvas, t: RoomTheme) => void;
+/**
+ * `turned` is true for facings 2 and 3, where the piece shows its back: some
+ * pieces then add back-panel details on their rear faces. Those are only drawn
+ * on the depth-tested canvas (facings 0 and 1 draw exactly as before, and in
+ * painter's order a rear-face detail would show through the piece).
+ */
+type Draw = (pc: IsoCanvas, t: RoomTheme, turned: boolean) => void;
+
+/** Plank seams and rails on a flat back panel (plane y = c, u0..u1 by z0..z1). */
+function backPanel(pc: IsoCanvas, t: RoomTheme, c: number, u0: number, u1: number, z0: number, z1: number, rails: readonly number[], plane: 'x' | 'y' = 'y'): void {
+  const panel = mix(t.wood, 0x000000, 0.1);
+  const seam = mix(t.wood, 0x000000, 0.3);
+  pc.planeRect(plane, c, u0, u1, z0, z1, panel);
+  const planks = Math.max(2, Math.round((u1 - u0) / 0.45));
+  for (let i = 1; i < planks; i++) {
+    const u = u0 + ((u1 - u0) * i) / planks;
+    pc.planeRect(plane, c, u - 0.02, u + 0.02, z0, z1, seam);
+  }
+  for (const z of rails) pc.planeRect(plane, c, u0, u1, z, z + 2, mix(t.wood, 0x000000, 0.2));
+}
 
 /** The drawing calls furniture art uses, in the piece's local world frame. */
 interface IsoCanvas {
@@ -144,9 +163,10 @@ const ART: Record<FurnitureId, Draw> = {
     pc.planeRect('y', 0.69, 0.18, 0.57, 19, 26, mix(t.wood, WHITE, 0.25));
   },
 
-  bookshelf(pc, t) {
+  bookshelf(pc, t, turned) {
     const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
     pc.isoBox(0, 0, 0, 1.5, 0.75, 64, wood);
+    if (turned) backPanel(pc, t, 0, 0.06, 1.44, 3, 62, [22, 42]);
     const front = (u0: number, u1: number, z0: number, z1: number, c: number) => pc.planeRect('y', 0.75, u0, u1, z0, z1, c);
     const inner = mix(t.wood, 0x000000, 0.35);
     const shadow = mix(t.wood, 0x000000, 0.5);
@@ -187,9 +207,10 @@ const ART: Record<FurnitureId, Draw> = {
     }
   },
 
-  nightstand(pc, t) {
+  nightstand(pc, t, turned) {
     const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
     pc.isoBox(0.04, 0.04, 0, 0.68, 0.68, 16, wood);
+    if (turned) backPanel(pc, t, 0.04, 0.1, 0.66, 2, 14, [], 'x');
     pc.planeRect('x', 0.72, 0.18, 0.58, 7, 8, t.outline);
     pc.isoBox(0.24, 0.24, 16, 0.24, 0.24, 2, shade(0xf3e6c4, t.outline));
     pc.isoBox(0.33, 0.33, 18, 0.06, 0.06, 8, shade(0xf3e6c4, t.outline));
@@ -243,7 +264,7 @@ const ART: Record<FurnitureId, Draw> = {
     pc.isoBox(0.3, 0.36, 15, 0.38, 0.12, 7, shade(t.accent, t.outline, mix(t.accent, WHITE, 0.4))); // pillow
   },
 
-  vanity(pc, t) {
+  vanity(pc, t, turned) {
     // Dressing table with a standing mirror at the back; drawers on the right.
     const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
     const leg = shade(mix(t.wood, 0x000000, 0.1), t.outline);
@@ -257,6 +278,7 @@ const ART: Record<FurnitureId, Draw> = {
     // Mirror: frame, glass with two light streaks, rounded (stepped) top.
     pc.isoBox(0.28, 0.06, 21, 0.94, 0.1, 28, wood);
     pc.isoBox(0.42, 0.06, 49, 0.66, 0.1, 3, wood);
+    if (turned) backPanel(pc, t, 0.06, 0.36, 1.14, 23, 48, [35]); // the mirror's wooden back
     const glass = mix(t.windowSky, WHITE, 0.45);
     pc.planeRect('y', 0.16, 0.36, 1.14, 24, 47, glass);
     pc.planeRect('y', 0.16, 0.5, 1.0, 47, 50, glass);
@@ -272,9 +294,10 @@ const ART: Record<FurnitureId, Draw> = {
     pc.isoBox(0.3, 0.42, 21, 0.16, 0.16, 3, shade(WHITE, t.outline));
   },
 
-  wardrobe(pc, t) {
+  wardrobe(pc, t, turned) {
     const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
     pc.isoBox(0, 0, 0, 1.5, 0.75, 70, wood);
+    if (turned) backPanel(pc, t, 0, 0.06, 1.44, 4, 68, [35]);
     pc.isoBox(0, 0, 70, 1.5, 0.75, 3, shade(mix(t.wood, WHITE, 0.2), t.outline, WHITE)); // crown
     const front = (u0: number, u1: number, z0: number, z1: number, c: number) => pc.planeRect('y', 0.75, u0, u1, z0, z1, c);
     const panel = mix(t.wood, WHITE, 0.18);
@@ -320,12 +343,13 @@ const ART: Record<FurnitureId, Draw> = {
     }, shade(base, t.outline, mix(base, WHITE, 0.45)));
   },
 
-  mirror(pc, t) {
+  mirror(pc, t, turned) {
     // Full-length mirror leaning on the back wall, glass facing +y.
     const wood = shade(t.wood, t.outline, mix(t.wood, WHITE, 0.35));
     pc.isoBox(0.08, 0.26, 0, 0.6, 0.18, 3, shade(mix(t.wood, 0x000000, 0.1), t.outline)); // foot
     pc.isoBox(0.06, 0.12, 0, 0.64, 0.12, 60, wood); // frame
     pc.isoBox(0.16, 0.12, 60, 0.44, 0.12, 2, wood); // rounded top
+    if (turned) backPanel(pc, t, 0.12, 0.13, 0.63, 5, 57, [20, 42]); // backing board with braces
     const glass = mix(t.windowSky, WHITE, 0.45);
     pc.planeRect('y', 0.24, 0.13, 0.63, 5, 57, glass);
     pc.planeRect('y', 0.24, 0.22, 0.54, 57, 59, glass);
@@ -402,6 +426,6 @@ export function drawFurniture(id: FurnitureId, theme: RoomTheme, facing: Facing 
   } else if (facing === 1) {
     canvas = new AxisSwap(pc);
   }
-  ART[id](canvas, theme);
+  ART[id](canvas, theme, facing >= 2);
   return pc.toCanvas();
 }

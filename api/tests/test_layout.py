@@ -59,6 +59,20 @@ def put(api, room_id, version, items):
     return api.c.put(f"/api/rooms/{room_id}/items", json={"layout_version": version, "items": items}, headers={"X-CSRF-Token": api.csrf})
 
 
+@pytest.mark.parametrize("facing", [0, 1, 2, 3])
+def test_every_piece_saves_in_every_facing(make_user, facing):
+    """All 15 pieces turn four ways: each facing saves and comes back unchanged."""
+    from app.layout import catalog
+
+    a = make_user("꾸미", "user_a")
+    rid = a.me["room_id"]
+    for version, item_type in enumerate(catalog()["items"]):
+        item = {"type": item_type, "x": 3, "y": 3, "facing": facing}
+        r = put(a, rid, version, [item])
+        assert r.status_code == 200, (item_type, r.text)
+        assert layout_of(a.get("/api/rooms/me").json()) == [item]
+
+
 def test_version_conflict_409(make_user):
     a = make_user("꾸미", "user_a")
     rid = a.me["room_id"]
@@ -76,7 +90,7 @@ def test_version_conflict_409(make_user):
         ([{"type": "piano", "x": 1, "y": 1, "facing": 0}], "unknown_type"),
         ([{"type": "chair", "x": 1.1, "y": 1, "facing": 0}], "off_grid"),
         ([{"type": "desk", "x": 8, "y": 0, "facing": 0}], "out_of_bounds"),
-        ([{"type": "desk", "x": 1, "y": 1, "facing": 3}], "bad_facing"),  # two-way piece
+        ([{"type": "desk", "x": 1, "y": 1, "facing": 5}], "bad_facing"),
         ([{"type": "chair", "x": 1, "y": 1, "facing": 4}], "bad_facing"),
         ([{"type": "bed", "x": 0, "y": 0, "facing": 0}, {"type": "bed", "x": 1, "y": 1, "facing": 0}], "overlap"),
         ([{"type": "bed", "x": x, "y": 3, "facing": 0} for x in (0, 3, 6)], "blocked_path"),

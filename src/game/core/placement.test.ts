@@ -6,6 +6,7 @@ import {
   findSpot,
   footprint,
   FURNITURE_TYPES,
+  isFacingFor,
   ROOM_H,
   ROOM_W,
   nextFacing,
@@ -61,7 +62,7 @@ describe('placement rules', () => {
       const e = new LayoutEditor([], { x: 7, y: 5.5 }); // empty room: nothing in the way of turning
       expect(e.add(type).ok).toBe(true);
       const uid = e.selected!.uid;
-      const order = rotationOf(type); // the sofa turns four ways, the others two
+      const order = rotationOf(type);
       for (const want of [...order.slice(1), order[0]]) {
         expect(e.rotate(uid).ok).toBe(true);
         expect(e.selected?.facing).toBe(want);
@@ -70,8 +71,12 @@ describe('placement rules', () => {
     }
   });
 
-  it('bed, chair and sofa turn four ways and come back; the rest keep two facings', () => {
-    for (const type of ['bed', 'chair', 'sofa'] as const) {
+  it('every piece turns four ways, clockwise, and comes back after four turns', () => {
+    for (const type of FURNITURE_TYPES) {
+      // Front on +y: [0, 3, 2, 1]; front on +x or symmetric: [0, 1, 2, 3]. Both turn the front +x, +y, -x, -y.
+      expect([[0, 3, 2, 1], [0, 1, 2, 3]]).toContainEqual([...rotationOf(type)]);
+      // Rooms saved before four-way turning (facing 0 or 1) stay valid.
+      expect(isFacingFor(type, 0) && isFacingFor(type, 1)).toBe(true);
       const e = new LayoutEditor([], { x: 7, y: 5.5 });
       expect(e.add(type).ok).toBe(true);
       const uid = e.selected!.uid;
@@ -83,15 +88,12 @@ describe('placement rules', () => {
       expect(new Set(seen.slice(0, 4)).size).toBe(4); // four different facings
       expect(seen[4]).toBe(seen[0]); // a full turn later: back where it started
       expect(seen.slice(0, 4)).toEqual([...rotationOf(type)]);
+      expect(nextFacing(type, seen[3]!)).toBe(seen[0]);
       // Quarter turns swap the footprint, half turns keep it.
       expect(size(type, 1)).toEqual(size(type, 3));
       expect(size(type, 0)).toEqual(size(type, 2));
       e.undo();
       expect(e.selected?.facing ?? e.items.find((i) => i.uid === uid)?.facing).toBe(seen[3]); // undo steps back one turn
-    }
-    for (const type of FURNITURE_TYPES.filter((t) => !['bed', 'chair', 'sofa'].includes(t))) {
-      expect(rotationOf(type)).toEqual([0, 1]);
-      expect(nextFacing(type, 1)).toBe(0);
     }
   });
 
@@ -155,7 +157,7 @@ describe('LayoutEditor', () => {
     const d = e.items.find((i) => i.uid === desk) as LayoutItem;
     const f = footprint(d);
     expect(f.x + f.w).toBeLessThanOrEqual(9);
-    expect(d.facing).toBe(1);
+    expect(d.facing).toBe(3); // the desk faces +y, so a clockwise turn is 0 -> 3
   });
 
   it('notifies subscribers', () => {
