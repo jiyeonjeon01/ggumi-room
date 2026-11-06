@@ -148,6 +148,8 @@ export function EditorPanel(props: EditorProps) {
         </div>
       </div>
       <p className="text-[11px] leading-relaxed text-plum-500/80">
+        마우스: 왼쪽 클릭 고르기 · 끌어서 옮기기 · 오른쪽 클릭 돌리기 · 휠 버튼 클릭 빼기
+        <br />
         단축키: R 돌리기 · Delete 빼기 · 방향키 한 칸 이동 · Ctrl+Z 되돌리기 · Esc 선택 해제
       </p>
     </div>

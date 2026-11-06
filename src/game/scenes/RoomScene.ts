@@ -321,6 +321,61 @@ export class RoomScene extends Phaser.Scene {
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => this.editPointerMove(pointer));
     this.input.on(Phaser.Input.Events.POINTER_UP, () => this.editPointerUp());
     this.input.on(Phaser.Input.Events.GAME_OUT, () => this.editPointerUp());
+
+    // Decorating with a mouse: right click turns the piece, a wheel-button
+    // click takes it out. Listening on the canvas itself means clicks outside
+    // the game never touch the layout (auxclick needs press and release on
+    // the same element). Outside edit mode nothing is intercepted, so the
+    // browser menu and middle-click scrolling behave as usual.
+    const canvas = this.game.canvas;
+    const onContextMenu = (e: MouseEvent) => {
+      if (!this.editor) return;
+      e.preventDefault();
+      // Touch long-press also opens a context menu; touch keeps the buttons.
+      const type = (e as PointerEvent).pointerType;
+      if (type && type !== 'mouse') return;
+      this.editShortcut('rotate', e);
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      if (this.editor && e.button === 1) e.preventDefault(); // no autoscroll
+    };
+    const onAuxClick = (e: MouseEvent) => {
+      if (!this.editor || e.button !== 1) return;
+      e.preventDefault();
+      this.editShortcut('remove', e);
+    };
+    canvas.addEventListener('contextmenu', onContextMenu);
+    canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('auxclick', onAuxClick);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      canvas.removeEventListener('contextmenu', onContextMenu);
+      canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('auxclick', onAuxClick);
+    });
+  }
+
+  /**
+   * Right click / wheel-button click while decorating: acts on the selected
+   * piece, or, with nothing selected, on the piece under the pointer (which
+   * becomes selected). Ignored mid-drag. Refusals snap nothing: the editor
+   * only applies valid changes, and the reason is reported.
+   */
+  private editShortcut(kind: 'rotate' | 'remove', e: MouseEvent): void {
+    const editor = this.editor;
+    if (!editor || this.drag) return;
+    let uid = editor.selected?.uid ?? null;
+    if (!uid) {
+      const rect = this.game.canvas.getBoundingClientRect();
+      const gx = ((e.clientX - rect.left) * this.scale.width) / rect.width;
+      const gy = ((e.clientY - rect.top) * this.scale.height) / rect.height;
+      const p = this.cameras.main.getWorldPoint(gx, gy);
+      uid = this.pick({ worldX: p.x, worldY: p.y });
+      if (!uid) return;
+      editor.select(uid);
+    }
+    const result = kind === 'rotate' ? editor.rotate(uid) : editor.remove(uid);
+    if (!result.ok) this.onEditReject?.(result.error);
+    this.drawSelection(null);
   }
 
   // ---------------------------------------------------------------- furniture
@@ -420,7 +475,7 @@ export class RoomScene extends Phaser.Scene {
   }
 
   /** Topmost furniture under the pointer (by visible pixels), tall pieces first, rugs last. */
-  private pick(pointer: Phaser.Input.Pointer): string | null {
+  private pick(pointer: { worldX: number; worldY: number }): string | null {
     const order = [...this.furniture.entries()].sort((a, b) => b[1].image.depth - a[1].image.depth);
     for (const [uid, f] of order) {
       const img = f.image;
