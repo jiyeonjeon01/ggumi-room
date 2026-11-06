@@ -18,6 +18,7 @@ import { WindowView } from '../environment/WindowView';
 import type { EditItem, LayoutEditor } from '../core/layoutEditor';
 import { footprint, snap, type LayoutError } from '../core/placement';
 import { FURNITURE, lightOf, screenOf, spriteFrame } from '../room/furniture';
+import { MoveReporter, RemoteMotion, type MoveState } from '../net/motion';
 import { obstaclesOf, type FurniturePlacement, type RoomData } from '../room/roomData';
 
 export const ROOM_SCENE = 'room';
@@ -30,6 +31,24 @@ export interface RoomSceneData {
   period: Period;
   /** The local player's bubble carried over a restart, with its original expiry time. */
   chat?: ShownChat;
+  /** Other people in the room (realtime), recreated after a restart. */
+  remotes?: RemoteMember[];
+  /** Where the local player's movement goes (throttled); none for offline rooms. */
+  onLocalMove?: (state: MoveState) => void;
+}
+
+/** Someone else in the room, as the server describes them. */
+export interface RemoteMember extends MoveState {
+  id: string;
+  nickname: string;
+}
+
+interface Remote {
+  avatar: Avatar;
+  motion: RemoteMotion;
+  bubble: SpeechBubble;
+  bubbleTimer: Phaser.Time.TimerEvent | null;
+  nickname: string;
 }
 
 export interface ShownChat {
@@ -112,6 +131,10 @@ export class RoomScene extends Phaser.Scene {
   private selection!: Phaser.GameObjects.Graphics;
   private marker!: Phaser.GameObjects.Image;
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
+  private remotes = new Map<string, Remote>();
+  private initialRemotes: RemoteMember[] = [];
+  private onLocalMove?: (state: MoveState) => void;
+  private reporter = new MoveReporter();
 
   constructor() {
     super(ROOM_SCENE);
@@ -132,6 +155,10 @@ export class RoomScene extends Phaser.Scene {
     this.drag = null;
     this.windows = [];
     this.nextEnvTick = 0;
+    this.remotes = new Map();
+    this.initialRemotes = data.remotes ?? [];
+    this.onLocalMove = data.onLocalMove;
+    this.reporter = new MoveReporter();
   }
 
   create(): void {
@@ -180,6 +207,7 @@ export class RoomScene extends Phaser.Scene {
 
     this.bubble = new SpeechBubble(this);
     if (this.initialChat) this.showChat(this.initialChat.message, this.initialChat.expiresAt);
+    for (const m of this.initialRemotes) this.addRemote(m);
 
     this.setupInput();
     this.fitCamera();
@@ -190,6 +218,10 @@ export class RoomScene extends Phaser.Scene {
       this.bubbleTimer = null;
       this.bubble.destroy();
       this.editUnsubscribe?.();
+      for (const r of this.remotes.values()) {
+        r.bubbleTimer?.remove();
+        r.bubble.destroy();
+      }
     });
     this.sortDepth();
   }
@@ -202,8 +234,23 @@ export class RoomScene extends Phaser.Scene {
     const y = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
     // While decorating, the character stays put.
     if (!this.editor) this.controller.update(dt, x, y);
+    if (this.onLocalMove) {
+      const p = this.player;
+      const out = this.reporter.update(performance.now(), { x: p.pos.x, y: p.pos.y, f: p.facing, s: p.state });
+      if (out) this.onLocalMove(out);
+    }
+    const nowMs = performance.now();
+    for (const r of this.remotes.values()) {
+      const st = r.motion.sample(nowMs);
+      r.avatar.pos = { x: st.x, y: st.y };
+      r.avatar.facing = st.f;
+      r.avatar.state = st.s;
+      r.avatar.syncView();
+    }
     this.sortDepth();
-    this.bubble.place(this.player.bubbleAnchor, this.cameras.main.worldView);
+    const view = this.cameras.main.worldView;
+    this.bubble.place(this.player.bubbleAnchor, view);
+    for (const r of this.remotes.values()) if (r.bubble.visible) r.bubble.place(r.avatar.bubbleAnchor, view);
 
     // Window scenery: cheap check at 10 Hz, re-render only on visible change.
     // Browsers suspend rAF for hidden tabs; the explicit check also covers
@@ -249,6 +296,75 @@ export class RoomScene extends Phaser.Scene {
     });
   }
 
+  // ---------------------------------------------------------------- other people (realtime)
+
+  /** Replaces everyone else in the room (after joining or rejoining). */
+  setRemotes(members: readonly RemoteMember[]): void {
+    const keep = new Set(members.map((m) => m.id));
+    for (const id of [...this.remotes.keys()]) if (!keep.has(id)) this.removeRemote(id);
+    for (const m of members) {
+      const r = this.remotes.get(m.id);
+      if (r) r.motion.jump(m, performance.now());
+      else this.addRemote(m);
+    }
+  }
+
+  addRemote(m: RemoteMember): void {
+    if (this.remotes.has(m.id)) return this.moveRemote(m.id, m);
+    const avatar = new Avatar(this, { x: m.x, y: m.y }, m.nickname, m.f);
+    avatar.setZoom(this.cameras.main.zoom);
+    const bubble = new SpeechBubble(this);
+    bubble.setZoom(this.cameras.main.zoom);
+    this.remotes.set(m.id, { avatar, motion: new RemoteMotion(m, performance.now()), bubble, bubbleTimer: null, nickname: m.nickname });
+    this.sortables.push(avatar);
+    this.sortDepth();
+  }
+
+  moveRemote(id: string, state: MoveState): void {
+    this.remotes.get(id)?.motion.push(state, performance.now());
+  }
+
+  removeRemote(id: string): void {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    this.remotes.delete(id);
+    r.bubbleTimer?.remove();
+    r.bubble.destroy();
+    r.avatar.destroy();
+    this.sortables = this.sortables.filter((s) => s !== r.avatar);
+  }
+
+  /** Someone else's speech bubble: same look and 5 s lifetime as the local one; a newer one replaces it. */
+  sayRemote(id: string, content: string): void {
+    const r = this.remotes.get(id);
+    if (!r) return;
+    r.bubbleTimer?.remove();
+    r.bubble.show(content);
+    r.bubble.place(r.avatar.bubbleAnchor, this.cameras.main.worldView);
+    r.bubbleTimer = this.time.delayedCall(BUBBLE_MS, () => {
+      r.bubbleTimer = null;
+      r.bubble.hide();
+    });
+  }
+
+  /** Where everyone else is right now (carried over a scene restart). */
+  getRemotes(): RemoteMember[] {
+    return [...this.remotes.entries()].map(([id, r]) => ({ id, nickname: r.nickname, ...r.motion.sample(performance.now()) }));
+  }
+
+  /** The server didn't accept our position (too fast, inside furniture): go back to where it last agreed. */
+  fixLocal(x: number, y: number): void {
+    this.controller.stop();
+    this.player.setPosition({ x, y });
+    this.player.setMotion(0, 0);
+    this.reporter.reset();
+  }
+
+  /** The next movement report goes out even if nothing changed (after (re)joining). */
+  resendPosition(): void {
+    this.reporter.reset();
+  }
+
   /** The bubble currently shown, used to carry it over scene restarts (theme switch). */
   getChatState(): ShownChat | undefined {
     return this.shownChat ?? undefined;
@@ -292,7 +408,8 @@ export class RoomScene extends Phaser.Scene {
         view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
       },
       windowLight: this.windowLight.state,
-      depthOrder: sortByDepth(this.sortables).map((s) => (s instanceof Avatar ? 'player' : s.image.texture.key)),
+      depthOrder: sortByDepth(this.sortables).map((s) => (s === this.player ? 'player' : s instanceof Avatar ? 'remote' : s.image.texture.key)),
+      remotes: this.getRemotes().map((r) => ({ ...r, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
     };
   }
 
@@ -599,5 +716,9 @@ export class RoomScene extends Phaser.Scene {
     cam.centerOn(Math.round((left + right) / 2), Math.round((top + bottom) / 2));
     this.player.setZoom(zoom);
     this.bubble.setZoom(zoom);
+    for (const r of this.remotes.values()) {
+      r.avatar.setZoom(zoom);
+      r.bubble.setZoom(zoom);
+    }
   }
 }

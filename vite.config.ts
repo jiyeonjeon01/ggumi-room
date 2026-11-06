@@ -11,7 +11,7 @@ export default defineConfig({
     port: 9020,
     strictPort: true,
     // Same-origin /api in development too, so cookies and CSRF behave like production.
-    proxy: { '/api': 'http://localhost:9200' },
+    proxy: { '/api': 'http://localhost:9200', '/ws': { target: 'ws://localhost:9200', ws: true } },
   },
   build: {
     // Phaser is large (~1MB min); keep it in its own cacheable chunk.

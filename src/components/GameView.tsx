@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { ThemeId } from '../game/art/themes';
 import type { LayoutEditor } from '../game/core/layoutEditor';
 import type { LayoutError, LayoutItem } from '../game/core/placement';
-import { createGame, type GameHandle } from '../game/createGame';
+import { createGame, type GameHandle, type MoveState, type RemoteControls } from '../game/createGame';
 import type { TimeMode } from '../game/environment/TimeOfDayClock';
 import type { Period } from '../game/environment/timeOfDay';
 import type { RoomData } from '../game/room/roomData';
@@ -16,10 +16,15 @@ function isTextEntry(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
-/** What the page can ask of the running game (decorating). */
+/** What the page can ask of the running game (decorating, realtime room sync). */
 export interface GameControls {
   startEdit(onReject: (error: LayoutError) => void): LayoutEditor | null;
   endEdit(layout: readonly LayoutItem[] | null): void;
+  remote: RemoteControls;
+  getPlayer(): { x: number; y: number; f: string } | null;
+  fixLocal(x: number, y: number): void;
+  resendPosition(): void;
+  applyLayout(layout: readonly LayoutItem[]): void;
 }
 
 interface Props {
@@ -31,6 +36,9 @@ interface Props {
   theme: ThemeId;
   timeMode: TimeMode;
   onPeriodChange?: (period: Period) => void;
+  /** Realtime: the local player's movement and speech go out through these. */
+  onLocalMove?: (state: MoveState) => void;
+  onLocalSay?: (text: string) => void;
 }
 
 /**
@@ -38,7 +46,7 @@ interface Props {
  * destroyed on unmount; prop changes are forwarded through the GameHandle
  * instead of re-creating the game. React never re-renders per game frame.
  */
-export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, editing = false }: Props) {
+export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, editing = false, onLocalMove, onLocalSay }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<GameHandle | null>(null);
   const themeRef = useRef(theme);
@@ -47,15 +55,31 @@ export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, e
   useEffect(() => {
     periodCallbackRef.current = onPeriodChange;
   }, [onPeriodChange]);
+  const netRef = useRef({ onLocalMove, onLocalSay });
+  netRef.current = { onLocalMove, onLocalSay };
+  const online = !!onLocalMove;
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const handle = createGame(el, room, themeRef.current, timeModeRef.current, {
       onPeriodChange: (p) => periodCallbackRef.current?.(p),
+      // Offline rooms (the demo) don't report movement at all.
+      ...(online
+        ? { onLocalMove: (s: MoveState) => netRef.current.onLocalMove?.(s), onLocalSay: (t: string) => netRef.current.onLocalSay?.(t) }
+        : {}),
     });
     handleRef.current = handle;
-    if (controlsRef) controlsRef.current = { startEdit: (r) => handle.startEdit(r), endEdit: (l) => handle.endEdit(l) };
+    if (controlsRef)
+      controlsRef.current = {
+        startEdit: (r) => handle.startEdit(r),
+        endEdit: (l) => handle.endEdit(l),
+        remote: handle.remote,
+        getPlayer: () => handle.getPlayer(),
+        fixLocal: (x, y) => handle.fixLocal(x, y),
+        resendPosition: () => handle.resendPosition(),
+        applyLayout: (l) => handle.applyLayout(l),
+      };
 
     // Any text field on the page (chat, friend search, forms) pauses game
     // keys, so typing never walks the character.
@@ -88,6 +112,7 @@ export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, e
       handleRef.current = null;
       if (controlsRef) controlsRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `online` is fixed for a mounted room
   }, [room]);
 
   useEffect(() => {

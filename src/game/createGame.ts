@@ -7,7 +7,21 @@ import { toLayout, toPlacements } from './room/roomData';
 import { TimeOfDayClock, type TimeMode } from './environment/TimeOfDayClock';
 import type { Period } from './environment/timeOfDay';
 import type { RoomData } from './room/roomData';
-import { ROOM_SCENE, RoomScene, type RoomSceneData } from './scenes/RoomScene';
+import { ROOM_SCENE, RoomScene, type RemoteMember, type RoomSceneData } from './scenes/RoomScene';
+import type { MoveState } from './net/motion';
+
+export type { RemoteMember } from './scenes/RoomScene';
+export type { MoveState } from './net/motion';
+
+/** Live updates about other people in the room, fed by the realtime connection. */
+export interface RemoteControls {
+  /** Everyone else, as the server lists them right after joining. */
+  reset(members: readonly RemoteMember[]): void;
+  join(member: RemoteMember): void;
+  move(id: string, state: MoveState): void;
+  leave(id: string): void;
+  say(id: string, text: string): void;
+}
 
 /** Small handle React uses to talk to the game. No per-frame data crosses it. */
 export interface GameHandle {
@@ -24,12 +38,26 @@ export interface GameHandle {
   startEdit(onReject: (error: LayoutError) => void): LayoutEditor | null;
   /** Ends decorating: shows `layout` (after a save) or the layout from before editing. */
   endEdit(layout: readonly LayoutItem[] | null): void;
+  /** Other people in the room. */
+  remote: RemoteControls;
+  /** Where the local player stands (sent when joining a room). */
+  getPlayer(): { x: number; y: number; f: string } | null;
+  /** Server correction of the local player's position. */
+  fixLocal(x: number, y: number): void;
+  /** Makes the next movement report go out (after (re)joining). */
+  resendPosition(): void;
+  /** Someone (the owner) saved a new layout: rebuild the room with it (ignored while decorating). */
+  applyLayout(layout: readonly LayoutItem[]): void;
   destroy(): void;
 }
 
 export interface GameCallbacks {
   /** Fires on start and whenever the time-of-day period changes. */
   onPeriodChange?: (period: Period) => void;
+  /** The local player moved (throttled to ~10 per second while walking). */
+  onLocalMove?: (state: MoveState) => void;
+  /** The local player said something (already shown locally). */
+  onLocalSay?: (text: string) => void;
 }
 
 export function isWebGLAvailable(): boolean {
@@ -102,11 +130,32 @@ export function createGame(
     if (game.input.keyboard) game.input.keyboard.enabled = on;
     scene()?.setKeyboardEnabled(on);
   };
+  const onLocalMove = callbacks.onLocalMove;
   const restart = (s: RoomScene) =>
-    s.scene.restart({ room: currentRoom, theme: currentTheme, player: s.getPlayerState(), period: clock.period, chat: s.getChatState() } satisfies RoomSceneData);
+    s.scene.restart({
+      room: currentRoom,
+      theme: currentTheme,
+      player: s.getPlayerState(),
+      period: clock.period,
+      chat: s.getChatState(),
+      remotes: s.getRemotes(),
+      onLocalMove,
+    } satisfies RoomSceneData);
+  // Remote updates arriving while the scene restarts are kept until it's back.
+  const active = () => {
+    const s = scene();
+    return s?.sys.isActive() ? s : null;
+  };
+  let pendingRemotes: RemoteMember[] | null = null;
 
-  const data: RoomSceneData = { room, theme, period: clock.period };
+  const data: RoomSceneData = { room, theme, period: clock.period, onLocalMove };
   game.scene.add(ROOM_SCENE, RoomScene, true, data);
+  // The scene object survives restarts, so this runs after every (re)create.
+  scene()?.events.on(Phaser.Scenes.Events.CREATE, () => {
+    if (!pendingRemotes) return;
+    scene()?.setRemotes(pendingRemotes);
+    pendingRemotes = null;
+  });
 
   if (import.meta.env.DEV) {
     // Inspection hook for local verification (not included in production builds).
@@ -137,6 +186,7 @@ export function createGame(
       const content = normalizeChat(text);
       if (!content) return false;
       chat.send(createChatMessage(localPlayerId, content));
+      callbacks.onLocalSay?.(content);
       return true;
     },
     setKeyboardEnabled(enabled) {
@@ -164,6 +214,40 @@ export function createGame(
         restart(s);
       }
       applyKeyboard();
+    },
+    remote: {
+      reset(members) {
+        const s = active();
+        if (s) s.setRemotes(members);
+        else pendingRemotes = [...members];
+      },
+      join(member) {
+        active()?.addRemote(member);
+      },
+      move(id, state) {
+        active()?.moveRemote(id, state);
+      },
+      leave(id) {
+        active()?.removeRemote(id);
+      },
+      say(id, text) {
+        active()?.sayRemote(id, text);
+      },
+    },
+    getPlayer() {
+      const p = active()?.getPlayerState();
+      return p ? { x: p.pos.x, y: p.pos.y, f: p.facing } : null;
+    },
+    fixLocal(x, y) {
+      active()?.fixLocal(x, y);
+    },
+    resendPosition() {
+      active()?.resendPosition();
+    },
+    applyLayout(layout) {
+      currentRoom = { ...currentRoom, furniture: toPlacements(layout) };
+      const s = active();
+      if (s && !editing) restart(s);
     },
     destroy() {
       if (import.meta.env.DEV) delete (window as unknown as { __ggumiroom?: unknown }).__ggumiroom;

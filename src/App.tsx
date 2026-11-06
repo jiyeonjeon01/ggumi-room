@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
+import { LiveProvider } from './app/live';
+import { useRoomLive } from './app/roomLive';
 import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
 import { FriendsPanel } from './components/FriendsPanel';
@@ -10,7 +12,7 @@ import { EditBar, EditorPanel, useEditorKeys } from './components/RoomEditor';
 import { RoomLayout } from './components/RoomLayout';
 import { Button, Card, Modal, ToastProvider, useToast } from './components/ui';
 import { THEME_IDS, THEMES, type ThemeId } from './game/art/themes';
-import { isWebGLAvailable } from './game/createGame';
+import { isWebGLAvailable, type MoveState } from './game/createGame';
 import type { TimeMode } from './game/environment/TimeOfDayClock';
 import { PERIOD_LABEL, PERIODS, type Period } from './game/environment/timeOfDay';
 import type { LayoutEditor } from './game/core/layoutEditor';
@@ -29,9 +31,11 @@ const showDevTools = import.meta.env.DEV;
 export default function App() {
   return (
     <AuthProvider>
-      <ToastProvider>
-        <Pages />
-      </ToastProvider>
+      <LiveProvider>
+        <ToastProvider>
+          <Pages />
+        </ToastProvider>
+      </LiveProvider>
     </AuthProvider>
   );
 }
@@ -328,6 +332,26 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
 
   useEditorKeys(editor, notice, cancelEditing);
 
+  // ---- realtime: other people in this room
+  const infoRef = useRef(info);
+  infoRef.current = info;
+  const live = useRoomLive({
+    roomId: info.id,
+    controls,
+    onLayout: (items, version) => {
+      const cur = infoRef.current;
+      if (version <= cur.layout_version) return; // our own save, already applied
+      const next = { ...cur, items, layout_version: version };
+      onInfo(next);
+      controls.current?.applyLayout(layoutFromServer(next.items));
+    },
+    onTheme: (theme) => {
+      if (theme in THEMES) onInfo({ ...infoRef.current, theme: theme as ThemeId });
+    },
+    onNotice: notice,
+  });
+  const together = live.others.length ? `${live.others.join(', ')}님과 함께 있어요.` : '';
+
   // Unsaved changes: ask before leaving the page (in-app links, back button, reload/close).
   useEffect(() => {
     if (!editor) return;
@@ -388,6 +412,8 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
       title={info.name}
       subtitle={`${THEMES[info.theme].label} · ${where}${editor ? ' · 꾸미는 중' : ''}`}
       controlsRef={controls}
+      onLocalMove={live.onLocalMove}
+      onLocalSay={live.onLocalSay}
       editing={!!editor}
       editBar={editorProps && <EditBar {...editorProps} />}
       panels={{
@@ -410,10 +436,24 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
         friends: (close) => <FriendsPanel onNavigate={close} />,
       }}
       banner={
-          isOwner ? undefined : (
+          live.state === 'replaced' ? (
             <>
-              <b className="font-normal text-blush-500">{info.owner_nickname}</b>님의 방을 혼자 둘러보는 중이에요. 함께
-              움직이고 대화하는 실시간 기능은 아직 준비 중이에요.
+              다른 탭이나 기기에서 이 방에 들어가서, 여기서는 혼자 보고 있어요.{' '}
+              <button type="button" onClick={live.rejoin} className="pointer-events-auto text-blush-500 underline underline-offset-2">
+                여기서 함께하기
+              </button>
+            </>
+          ) : live.state === 'denied' ? (
+            '이 방에 함께 들어갈 수 없어요. 친구가 되거나 초대 링크로 들어와 주세요.'
+          ) : live.status === 'unauthorized' ? (
+            '로그인이 끝나서 실시간 연결이 끊겼어요. 다시 로그인해 주세요.'
+          ) : live.status !== 'open' ? (
+            '실시간 연결 중이에요. 잠시 다른 사람이 보이지 않을 수 있어요.'
+          ) : isOwner ? (
+            together || undefined
+          ) : (
+            <>
+              <b className="font-normal text-blush-500">{info.owner_nickname}</b>님의 방에 놀러 왔어요. {together}
             </>
           )
         }
@@ -455,6 +495,8 @@ function RoomScreen({
   controlsRef,
   editing = false,
   editBar,
+  onLocalMove,
+  onLocalSay,
 }: {
   room: RoomData;
   theme: ThemeId;
@@ -464,6 +506,8 @@ function RoomScreen({
   subtitle: string;
   banner?: ReactNode;
   controlsRef?: { current: GameControls | null };
+  onLocalMove?: (state: MoveState) => void;
+  onLocalSay?: (text: string) => void;
   editing?: boolean;
   /** Decorating tools shown under the game on tablet/mobile. */
   editBar?: ReactNode;
@@ -501,7 +545,16 @@ function RoomScreen({
       className="relative min-h-[320px] flex-1 overflow-hidden rounded-[28px] shadow-[0_8px_30px_-12px_rgba(122,74,104,0.35)] ring-4 ring-white transition-colors duration-500"
       style={{ backgroundColor: hex(THEMES[theme].backdrop) }}
     >
-      <GameView room={room} theme={theme} timeMode={timeMode} onPeriodChange={setPeriod} controlsRef={controlsRef} editing={editing} />
+      <GameView
+        room={room}
+        theme={theme}
+        timeMode={timeMode}
+        onPeriodChange={setPeriod}
+        controlsRef={controlsRef}
+        editing={editing}
+        onLocalMove={onLocalMove}
+        onLocalSay={onLocalSay}
+      />
 
       <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-2xl bg-white/85 px-3 py-2 shadow-sm ring-1 ring-blush-200 backdrop-blur">
         <span aria-hidden>{THEME_EMOJI[theme]}</span>
