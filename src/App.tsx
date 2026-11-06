@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api, ApiError, type RoomInfo } from './api/client';
+import { api, ApiError, type PartyInfo, type RoomInfo } from './api/client';
 import { AuthProvider, useAuth } from './app/auth';
 import { ChatProvider, useChat } from './app/chat';
 import { LiveProvider } from './app/live';
@@ -13,6 +13,7 @@ import { GuestbookModal } from './components/GuestbookModal';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
+import { PartyPanel } from './components/PartyPanel';
 import { EditBar, EditorPanel, useEditorKeys } from './components/RoomEditor';
 import { RoomLayout } from './components/RoomLayout';
 import { Button, Card, Modal, ToastProvider, useToast } from './components/ui';
@@ -22,9 +23,10 @@ import type { TimeMode } from './game/environment/TimeOfDayClock';
 import { PERIOD_LABEL, PERIODS, type Period } from './game/environment/timeOfDay';
 import type { LayoutEditor } from './game/core/layoutEditor';
 import { isFacingFor, isFurnitureType, LAYOUT_ERROR_TEXT, type Facing, type LayoutItem } from './game/core/placement';
-import { DEMO_ROOM, toPlacements, type RoomData } from './game/room/roomData';
+import { DEMO_ROOM, roomFromTemplate, toPlacements, type RoomData } from './game/room/roomData';
 import { finishAuth, LoginPage, SignupPage } from './pages/AuthPage';
 import { InvitePage } from './pages/InvitePage';
+import { Balloons, PartyPage } from './pages/PartyPage';
 
 const THEME_EMOJI: Record<ThemeId, string> = { pastel: '🎀', galaxy: '🪐', plant: '🌿' };
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -72,6 +74,12 @@ function Pages() {
       return (
         <Layout>
           <InvitePage token={route.token} />
+        </Layout>
+      );
+    case 'party':
+      return (
+        <Layout>
+          <PartyPage token={route.token} />
         </Layout>
       );
     case 'login':
@@ -205,14 +213,18 @@ function DemoScreen() {
 
 function useRoomInfo(path: string) {
   const [info, setInfo] = useState<RoomInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   useEffect(() => {
     let cancelled = false;
     setInfo(null);
     setError(null);
     api<RoomInfo>('GET', path)
       .then((r) => !cancelled && setInfo(r))
-      .catch((e) => !cancelled && setError(e instanceof ApiError ? e.detail.message : '방을 불러오지 못했어요.'));
+      .catch(
+        (e) =>
+          !cancelled &&
+          setError(e instanceof ApiError ? { message: e.detail.message, closed: e.status === 410 } : { message: '방을 불러오지 못했어요.', closed: false }),
+      );
     return () => {
       cancelled = true;
     };
@@ -233,23 +245,42 @@ function MyRoomScreen() {
 
 function VisitRoomScreen({ id }: { id: string }) {
   const { info, setInfo, error } = useRoomInfo(`/api/rooms/${id}`);
-  return info ? (
+  if (!info) return <RoomLoadState error={error} />;
+  return (
     <FriendsProvider>
-      <ServerRoomScreen info={info} onInfo={setInfo} />
+      {info.kind === 'party' ? <PartyRoomScreen info={info} /> : <ServerRoomScreen info={info} onInfo={setInfo} />}
     </FriendsProvider>
-  ) : (
-    <RoomLoadState error={error} />
   );
 }
 
-function RoomLoadState({ error }: { error: string | null }) {
+interface LoadError {
+  message: string;
+  /** A party I was in has ended. */
+  closed: boolean;
+}
+
+function RoomLoadState({ error }: { error: LoadError | null }) {
   if (!error) return <Loading />;
+  if (error.closed) {
+    return (
+      <Layout>
+        <div className="mx-auto w-full max-w-sm py-6">
+          <Card className="text-center">
+            <Balloons dim />
+            <h2 className="mb-2 text-xl text-plum-700">파티룸이 끝났어요</h2>
+            <p className="mb-5 text-sm text-plum-500">방장이 파티를 끝냈거나, 모두 나간 뒤 30분이 지나 문을 닫았어요.</p>
+            <Button onClick={() => navigate('/')}>내 방으로</Button>
+          </Card>
+        </div>
+      </Layout>
+    );
+  }
   return (
     <Layout>
       <div className="mx-auto w-full max-w-sm py-6">
         <Card className="text-center">
           <h2 className="mb-2 text-xl text-plum-700">들어갈 수 없는 방이에요</h2>
-          <p className="mb-5 text-sm text-plum-500">{error} 친구의 방은 친구가 되거나 초대 링크로 들어갈 수 있어요.</p>
+          <p className="mb-5 text-sm text-plum-500">{error.message} 친구의 방은 친구가 되거나 초대 링크로 들어갈 수 있어요.</p>
           <Button onClick={() => navigate('/')}>내 방으로</Button>
         </Card>
       </div>
@@ -423,6 +454,17 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
     }
   };
 
+  const openParty = async () => {
+    try {
+      const p = await api<PartyInfo>('POST', '/api/parties');
+      navigate(`/room/${p.room_id}`);
+      toast('파티룸을 열었어요! 🔗 링크를 복사해 친구들을 불러 보세요.');
+    } catch (e) {
+      if (e instanceof ApiError && e.detail.code === 'party_open' && e.detail.room_id) navigate(`/room/${e.detail.room_id}`);
+      else toast(e instanceof ApiError ? e.detail.message : '파티룸을 열지 못했어요.');
+    }
+  };
+
   const where = info.access === 'friend' ? '친구의 방' : info.access === 'guest' ? '초대받은 방' : '내 방';
   return (
     <>
@@ -451,6 +493,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
                 onInvite={() => (close?.(), void invite())}
                 onDecorate={() => (close?.(), startEditing())}
                 onGuestbook={() => (close?.(), setGuestbookOpen(true))}
+                onParty={() => (close?.(), void openParty())}
                 onNavigate={close}
               />
             )
@@ -513,6 +556,160 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
   );
 }
 
+/**
+ * A party room: the fixed lounge, everyone who joined by link, the head count
+ * and the share link. No decorating, theme or guestbook; the host can end it.
+ */
+function PartyRoomScreen({ info }: { info: RoomInfo }) {
+  const { me } = useAuth();
+  const toast = useToast();
+  const { incomingCount } = useFriends();
+  const { totalUnread } = useChat();
+  const controls = useRef<GameControls | null>(null);
+  const notice = useCallback((m: string) => toast(m), [toast]);
+  const [confirmEnd, setConfirmEnd] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const isHost = info.access === 'owner';
+  const nickname = me?.nickname ?? DEMO_ROOM.owner;
+
+  const { id: roomId, name: roomName, theme } = info;
+  const room = useMemo<RoomData>(
+    () => roomFromTemplate('lounge', { id: roomId, name: roomName, owner: nickname, theme }),
+    [roomId, roomName, nickname, theme],
+  );
+  const live = useRoomLive({ roomId, controls, onLayout: () => {}, onTheme: () => {}, onNotice: notice });
+  const count = live.count ?? { count: info.party?.count ?? 0, capacity: info.party?.capacity ?? 10 };
+
+  const copyLink = async () => {
+    const url = info.party?.share_url;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('파티룸 링크를 복사했어요! 함께 놀 사람에게 보내 주세요 🎉');
+    } catch {
+      window.prompt('자동 복사가 안 돼요. 아래 링크를 직접 복사해 주세요.', url);
+    }
+  };
+
+  const endParty = async () => {
+    setEnding(true);
+    try {
+      await api('POST', `/api/parties/${roomId}/close`);
+      setConfirmEnd(false);
+      navigate('/', { replace: true });
+      toast('파티룸을 끝냈어요. 함께해 줘서 고마워요!');
+    } catch (e) {
+      toast(e instanceof ApiError ? e.detail.message : '파티룸을 끝내지 못했어요.');
+    } finally {
+      setEnding(false);
+    }
+  };
+
+  // Up to 10 people: name a few, count the rest, so the banner stays one or two lines.
+  const named = live.others.slice(0, 3).join(', ');
+  const rest = live.others.length - 3;
+  const together = live.others.length
+    ? `${named}님${rest > 0 ? ` 외 ${rest}명` : ''}과 함께 있어요.`
+    : '아직 혼자예요. 링크를 보내 친구들을 불러 보세요!';
+  const overlay =
+    live.state === 'full' ? (
+      <>
+        <Balloons className="mx-auto mb-3 h-14 w-20" />
+        <h2 id="stage-notice-title" className="mb-1 text-lg text-plum-700">
+          파티룸이 꽉 찼어요
+        </h2>
+        <p className="mb-4 text-sm leading-relaxed text-plum-500">
+          지금 {count.count}/{count.capacity}명이 놀고 있어요.
+          <br />
+          누가 나가면 자리가 생겨요.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="soft" className="flex-1" onClick={() => navigate('/')}>
+            내 방으로
+          </Button>
+          <Button className="flex-1" onClick={live.rejoin}>
+            다시 시도
+          </Button>
+        </div>
+      </>
+    ) : live.state === 'closed' ? (
+      <>
+        <Balloons dim className="mx-auto mb-3 h-14 w-20" />
+        <h2 id="stage-notice-title" className="mb-1 text-lg text-plum-700">
+          파티룸이 끝났어요
+        </h2>
+        <p className="mb-4 text-sm leading-relaxed text-plum-500">방장이 파티를 끝냈거나, 모두 나간 뒤 30분이 지나 문을 닫았어요.</p>
+        <Button className="w-full" onClick={() => navigate('/', { replace: true })}>
+          내 방으로
+        </Button>
+      </>
+    ) : undefined;
+
+  return (
+    <>
+      <RoomScreen
+        room={room}
+        theme={theme}
+        title={info.name}
+        subtitle={`파티 라운지 · ${count.count}/${count.capacity}명`}
+        controlsRef={controls}
+        onLocalMove={live.onLocalMove}
+        onLocalSay={live.onLocalSay}
+        overlay={overlay}
+        panels={{
+          badge: incomingCount,
+          unread: totalUnread,
+          my: (close) =>
+            me && (
+              <PartyPanel
+                me={me}
+                room={info}
+                count={count}
+                onCopyLink={() => (close?.(), void copyLink())}
+                onEnd={isHost ? () => (close?.(), setConfirmEnd(true)) : undefined}
+                onNavigate={close}
+              />
+            ),
+          friends: (close) => <FriendsPanel onNavigate={close} />,
+        }}
+        banner={
+          overlay ? undefined : live.state === 'replaced' ? (
+            <>
+              다른 탭이나 기기에서 이 파티룸에 들어가서, 여기서는 혼자 보고 있어요.{' '}
+              <button type="button" onClick={live.rejoin} className="pointer-events-auto text-blush-500 underline underline-offset-2">
+                여기서 함께하기
+              </button>
+            </>
+          ) : live.state === 'denied' ? (
+            '이 파티룸에 들어갈 수 없어요. 받은 링크로 다시 들어와 주세요.'
+          ) : live.status === 'unauthorized' ? (
+            '로그인이 끝나서 실시간 연결이 끊겼어요. 다시 로그인해 주세요.'
+          ) : live.status !== 'open' ? (
+            '실시간 연결 중이에요. 잠시 다른 사람이 보이지 않을 수 있어요.'
+          ) : (
+            together
+          )
+        }
+      />
+      {confirmEnd && (
+        <Modal title="파티룸을 끝낼까요?" onClose={() => !ending && setConfirmEnd(false)}>
+          <p className="mb-4 text-sm leading-relaxed text-plum-700">
+            지금 함께 있는 모든 사람이 파티룸에서 나가게 되고, 이 링크로는 다시 들어올 수 없어요.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="soft" className="flex-1" onClick={() => setConfirmEnd(false)} disabled={ending}>
+              계속 놀기
+            </Button>
+            <Button className="flex-1" onClick={() => void endParty()} disabled={ending}>
+              {ending ? '끝내는 중…' : '파티룸 끝내기'}
+            </Button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 /** Server items -> editor layout (unknown types from a newer catalog are skipped). */
 function layoutFromServer(items: RoomInfo['items']): LayoutItem[] {
   return items.flatMap((i) => (isFurnitureType(i.type) ? [{ type: i.type, x: i.x, y: i.y, facing: isFacingFor(i.type, i.facing) ? i.facing : (0 as Facing) }] : []));
@@ -529,6 +726,7 @@ function RoomScreen({
   controlsRef,
   editing = false,
   editBar,
+  overlay,
   onLocalMove,
   onLocalSay,
 }: {
@@ -545,6 +743,8 @@ function RoomScreen({
   editing?: boolean;
   /** Decorating tools shown under the game on tablet/mobile. */
   editBar?: ReactNode;
+  /** A notice card over the game (e.g. party full or ended). */
+  overlay?: ReactNode;
   /** Logged-in rooms: side panels / rail / tabs around the game (see RoomLayout). */
   panels?: {
     badge: number;
@@ -609,6 +809,14 @@ function RoomScreen({
         <p className="pointer-events-none absolute inset-x-4 top-20 mx-auto max-w-md rounded-2xl bg-white/90 px-4 py-2 text-center text-xs leading-relaxed text-plum-700 shadow-sm ring-1 ring-blush-200 sm:top-auto sm:bottom-16 sm:text-sm">
           {banner}
         </p>
+      )}
+
+      {overlay && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-plum-900/25 p-4 backdrop-blur-[2px]">
+          <div role="alertdialog" aria-labelledby="stage-notice-title" className="w-full max-w-xs rounded-[24px] bg-cream p-5 text-center shadow-xl ring-4 ring-white">
+            {overlay}
+          </div>
+        </div>
       )}
 
       {showDevTools && <TimeDevPanel mode={timeMode} onChange={setTimeMode} />}

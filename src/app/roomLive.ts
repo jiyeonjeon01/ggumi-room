@@ -8,8 +8,18 @@ import { useLive } from './live';
  * Where this tab stands in the room's realtime session:
  * off (not connected) -> joining -> in; replaced = another tab or device of
  * mine joined this room (only one character per person); denied = no access.
+ * Party rooms also: full = no free spot right now (retry by joining again);
+ * closed = the party ended.
  */
-export type RoomLiveState = 'off' | 'joining' | 'in' | 'replaced' | 'denied';
+export type RoomLiveState = 'off' | 'joining' | 'in' | 'replaced' | 'denied' | 'full' | 'closed';
+
+/** People in a party room (including seats kept for a dropped connection). */
+export interface HeadCount {
+  count: number;
+  capacity: number;
+}
+const headCount = (m: ServerMessage): HeadCount | null =>
+  typeof m.count === 'number' && typeof m.capacity === 'number' ? { count: m.count, capacity: m.capacity } : null;
 
 interface Options {
   roomId: string;
@@ -31,6 +41,7 @@ export function useRoomLive({ roomId, controls, onLayout, onTheme, onNotice }: O
   const { live, status } = useLive();
   const [state, setState] = useState<RoomLiveState>('off');
   const [others, setOthers] = useState<string[]>([]);
+  const [count, setCount] = useState<HeadCount | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const cb = useRef({ onLayout, onTheme, onNotice });
@@ -63,6 +74,7 @@ export function useRoomLive({ roomId, controls, onLayout, onTheme, onNotice }: O
         if (isMember(you) && p && Math.hypot(you.x - p.x, you.y - p.y) > 0.05) controls.current?.fixLocal(you.x, you.y);
         controls.current?.resendPosition();
         setState('in');
+        setCount(headCount(m));
         show();
       }),
       live.on('room.join', (m) => {
@@ -86,17 +98,25 @@ export function useRoomLive({ roomId, controls, onLayout, onTheme, onNotice }: O
         clear();
         setState('replaced');
       }),
-      live.on('room.denied', () => {
+      live.on('room.denied', (m) => {
         clear();
-        setState('denied');
+        if (m.code === 'full') {
+          setCount(headCount(m));
+          setState('full');
+        } else setState(m.code === 'closed' ? 'closed' : 'denied');
+      }),
+      live.on('room.count', (m) => setCount(headCount(m))),
+      live.on('room.closed', () => {
+        clear();
+        setState('closed');
       }),
       live.on('error', (m) => {
         if (m.code === 'chat_rate') cb.current.onNotice('말풍선은 조금 천천히 보내 주세요.');
       }),
       live.onStatus((s) => {
         if (s === 'open') {
-          // (Re)connected: back into the room, unless another tab holds it.
-          if (stateRef.current !== 'replaced' && stateRef.current !== 'denied') join();
+          // (Re)connected: back into the room, unless another tab holds it (or it's gone).
+          if (stateRef.current !== 'replaced' && stateRef.current !== 'denied' && stateRef.current !== 'closed') join();
         } else {
           clear();
           if (stateRef.current === 'in' || stateRef.current === 'joining') setState('off');
@@ -119,5 +139,5 @@ export function useRoomLive({ roomId, controls, onLayout, onTheme, onNotice }: O
     if (stateRef.current === 'in') live?.send({ t: 'say', text });
   }, [live]);
 
-  return { status, state, others, rejoin: join, onLocalMove, onLocalSay };
+  return { status, state, others, count, rejoin: join, onLocalMove, onLocalSay };
 }

@@ -9,6 +9,10 @@ export interface ApiErrorDetail {
   message: string;
   field?: string;
   status?: string;
+  /** Machine-readable reason some errors carry (e.g. "party_open", "closed"). */
+  code?: string;
+  /** With code "party_open": the party already open. */
+  room_id?: string;
 }
 
 export class ApiError extends Error {
@@ -95,11 +99,32 @@ export interface RoomInfo {
   theme: ThemeIdApi;
   owner_id: string;
   owner_nickname: string;
-  access: 'owner' | 'friend' | 'guest';
+  /** member: joined a party through its link. */
+  access: 'owner' | 'friend' | 'guest' | 'member';
   updated_at: string;
   layout_version: number;
   items: { type: string; x: number; y: number; facing: number }[];
   guestbook_enabled: boolean;
+  kind: 'personal' | 'party';
+  template: string;
+  party: { share_url: string; capacity: number; count: number } | null;
+}
+
+export interface PartyInfo {
+  room_id: string;
+  name: string;
+  share_url: string;
+  capacity: number;
+  count: number;
+}
+
+export interface PartyPreview {
+  status: 'open' | 'closed' | 'not_found';
+  room_id: string | null;
+  name: string | null;
+  host_nickname: string | null;
+  capacity: number | null;
+  count: number | null;
 }
 
 export interface GuestbookEntry {

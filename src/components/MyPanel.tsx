@@ -1,11 +1,12 @@
-import type { Me, RoomInfo } from '../api/client';
+import { useEffect, useState } from 'react';
+import { api, type Me, type PartyInfo, type RoomInfo } from '../api/client';
 import { navigate } from '../app/router';
 import { joinedLabel } from '../app/rules';
 import { THEME_IDS, THEMES, type ThemeId } from '../game/art/themes';
 import { Button } from './ui';
 
 const THEME_EMOJI: Record<ThemeId, string> = { pastel: '🎀', galaxy: '🪐', plant: '🌿' };
-const WHERE: Record<RoomInfo['access'], string> = { owner: '내 방', friend: '친구의 방', guest: '초대받은 방' };
+const WHERE: Record<RoomInfo['access'], string> = { owner: '내 방', friend: '친구의 방', guest: '초대받은 방', member: '파티룸' };
 
 /**
  * Left panel: who I am and what I can do here. In my room: theme and invite.
@@ -18,6 +19,7 @@ export function MyPanel({
   onInvite,
   onDecorate,
   onGuestbook,
+  onParty,
   onNavigate,
 }: {
   me: Me;
@@ -27,10 +29,18 @@ export function MyPanel({
   /** Starts decorating (furniture). */
   onDecorate: () => void;
   onGuestbook: () => void;
+  /** Opens a party room, or goes to the one I already have open. */
+  onParty: () => void;
   /** Lets a drawer/sheet close itself when leaving the room. */
   onNavigate?: () => void;
 }) {
   const isOwner = room.access === 'owner';
+  const hasParty = useMyParty() !== null;
+  const party = (
+    <Button variant="soft" className="w-full" onClick={onParty}>
+      {hasParty ? '🎉 내 파티룸으로' : '🎉 파티룸 만들기'}
+    </Button>
+  );
   return (
     <div className="space-y-4">
       <section aria-label="내 프로필" className="flex items-center gap-3">
@@ -79,6 +89,7 @@ export function MyPanel({
           <Button className="w-full" onClick={onInvite}>
             💌 친구 초대하기
           </Button>
+          {party}
         </>
       ) : (
         <>
@@ -92,6 +103,7 @@ export function MyPanel({
           <Button variant="soft" className="w-full" onClick={onGuestbook}>
             📒 방명록 남기기
           </Button>
+          {party}
           <Button className="w-full" onClick={() => (onNavigate?.(), navigate('/'))}>
             🏠 내 방으로 돌아가기
           </Button>
@@ -99,6 +111,21 @@ export function MyPanel({
       )}
     </div>
   );
+}
+
+/** The party I host that's still open (null: none, or not known yet). */
+function useMyParty(): PartyInfo | null {
+  const [party, setParty] = useState<PartyInfo | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<PartyInfo | null>('GET', '/api/parties/mine')
+      .then((p) => !cancelled && setParty(p))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return party;
 }
 
 export function Avatar({ name, small = false }: { name: string; small?: boolean }) {

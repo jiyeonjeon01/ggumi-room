@@ -8,6 +8,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'room'; id: string }
   | { name: 'invite'; token: string }
+  | { name: 'party'; token: string }
   | { name: 'login'; next: string }
   | { name: 'signup'; next: string }
   | { name: 'notFound' };
@@ -15,6 +16,7 @@ export type Route =
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const ROOM_RE = new RegExp(`^/room/(${UUID})$`, 'i');
 const INVITE_RE = /^\/invite\/([A-Za-z0-9_-]{32})$/;
+const PARTY_RE = /^\/party\/([A-Za-z0-9_-]{32})$/;
 
 /**
  * Only our own in-app paths may be used as a post-login destination, never a
@@ -23,7 +25,7 @@ const INVITE_RE = /^\/invite\/([A-Za-z0-9_-]{32})$/;
 export function safeNext(next: string | null | undefined): string {
   if (!next || !next.startsWith('/') || next.startsWith('//') || next.includes('\\')) return '/';
   const path = next.split(/[?#]/)[0] ?? '/';
-  return path === '/' || ROOM_RE.test(path) || INVITE_RE.test(path) ? path : '/';
+  return path === '/' || ROOM_RE.test(path) || INVITE_RE.test(path) || PARTY_RE.test(path) ? path : '/';
 }
 
 export function parse(pathname: string, search: string): Route {
@@ -33,9 +35,12 @@ export function parse(pathname: string, search: string): Route {
   if (room?.[1]) return { name: 'room', id: room[1].toLowerCase() };
   const invite = INVITE_RE.exec(pathname);
   if (invite?.[1]) return { name: 'invite', token: invite[1] };
+  const party = PARTY_RE.exec(pathname);
+  if (party?.[1]) return { name: 'party', token: party[1] };
   if (pathname === '/login') return { name: 'login', next: safeNext(params.get('next')) };
   if (pathname === '/signup') return { name: 'signup', next: safeNext(params.get('next')) };
   if (/^\/invite\//.test(pathname)) return { name: 'invite', token: '' }; // malformed token -> "not found" card
+  if (/^\/party\//.test(pathname)) return { name: 'party', token: '' };
   return { name: 'notFound' };
 }
 
