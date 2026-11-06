@@ -152,3 +152,20 @@ describe('avatar sprite data', () => {
     }
   });
 });
+
+describe('NavGrid main area', () => {
+  it('is the largest connected floor area; tiny cut-off corners are outside it', () => {
+    // A wall of furniture closes off the left 0.5 tiles of a 4 x 2 room.
+    const world = new CollisionWorld(4, 2, [{ x: 0.5, y: 0, w: 0.5, h: 2 }]);
+    const nav = new NavGrid(world, 0.1);
+    const main = nav.mainArea();
+    const corner = nav.cellOf({ x: 0.25, y: 1 });
+    const open = nav.cellOf({ x: 3, y: 1 });
+    expect(nav.isWalkable(corner.c, corner.r)).toBe(true); // walkable, but cut off
+    expect(main.has(corner.r * nav.cols + corner.c)).toBe(false);
+    expect(main.has(open.r * nav.cols + open.c)).toBe(true);
+    // Someone left in the corner is sent to the nearest spot of the main area.
+    const cell = nav.nearestWalkableCell({ x: 0.25, y: 1 }, main)!;
+    expect(nav.cellCenter(cell.c, cell.r).x).toBeGreaterThan(1);
+  });
+});

@@ -191,10 +191,15 @@ export class RoomScene extends Phaser.Scene {
     this.world = world;
     ensureAvatarTextures(this);
     const nav = new NavGrid(world, AVATAR_RADIUS);
-    // After a layout change the old spot may be inside furniture: step to the nearest free one.
+    // After a layout change the old spot may be inside furniture or in a tiny
+    // corner cut off from the rest of the floor: step to the nearest spot of
+    // the main floor area. (Decorating hides the character, so the editor
+    // doesn't keep furniture off it; this is where it gets sorted out.)
     let start = this.initialPlayer?.pos ?? room.spawn;
-    if (!world.isFree(start.x, start.y, AVATAR_RADIUS)) {
-      const cell = nav.nearestWalkableCell(start);
+    const main = nav.mainArea();
+    const here = nav.cellOf(start);
+    if (!world.isFree(start.x, start.y, AVATAR_RADIUS) || !main.has(here.r * nav.cols + here.c)) {
+      const cell = nav.nearestWalkableCell(start, main) ?? nav.nearestWalkableCell(start);
       if (cell) start = nav.cellCenter(cell.c, cell.r);
     }
     this.player = new Avatar(this, start, room.owner, this.initialPlayer?.facing);
@@ -315,6 +320,7 @@ export class RoomScene extends Phaser.Scene {
     avatar.setZoom(this.cameras.main.zoom);
     const bubble = new SpeechBubble(this);
     bubble.setZoom(this.cameras.main.zoom);
+    if (this.editor) avatar.setVisible(false); // joined while we're decorating
     this.remotes.set(m.id, { avatar, motion: new RemoteMotion(m, performance.now()), bubble, bubbleTimer: null, nickname: m.nickname });
     this.sortables.push(avatar);
     this.sortDepth();
@@ -339,6 +345,7 @@ export class RoomScene extends Phaser.Scene {
     const r = this.remotes.get(id);
     if (!r) return;
     r.bubbleTimer?.remove();
+    if (this.editor) return; // no bubbles while decorating (they'd float over furniture)
     r.bubble.show(content);
     r.bubble.place(r.avatar.bubbleAnchor, this.cameras.main.worldView);
     r.bubbleTimer = this.time.delayedCall(BUBBLE_MS, () => {
@@ -409,7 +416,8 @@ export class RoomScene extends Phaser.Scene {
       },
       windowLight: this.windowLight.state,
       depthOrder: sortByDepth(this.sortables).map((s) => (s === this.player ? 'player' : s instanceof Avatar ? 'remote' : s.image.texture.key)),
-      remotes: this.getRemotes().map((r) => ({ ...r, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
+      peopleVisible: this.player.visible,
+      remotes: this.getRemotes().map((r) => ({ ...r, visible: this.remotes.get(r.id)?.avatar.visible ?? false, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
     };
   }
 
@@ -564,6 +572,7 @@ export class RoomScene extends Phaser.Scene {
     this.onEditReject = onReject;
     this.controller.stop();
     this.player.setMotion(0, 0);
+    this.setPeopleVisible(false);
     const draw = () => {
       this.renderFurniture(
         editor.items.map((i: EditItem) => ({ uid: i.uid, placement: { id: i.type, x: i.x, y: i.y, facing: i.facing } })),
@@ -580,12 +589,24 @@ export class RoomScene extends Phaser.Scene {
     this.editor = null;
     this.drag = null;
     this.selection?.clear();
+    this.setPeopleVisible(true);
   }
 
-  /** Where the character stands (furniture can't go there while editing). */
-  getPlayerPos(): Vec2 {
-    return { ...this.player.pos };
+  /**
+   * Decorating shows just the room: every character, name tag and speech
+   * bubble is hidden on this screen only. Nothing is destroyed or
+   * disconnected; other people keep moving (hidden) and see us as usual.
+   */
+  private setPeopleVisible(visible: boolean): void {
+    this.player?.setVisible(visible);
+    if (!visible) this.bubble?.hide();
+    else if (this.shownChat) this.bubble.show(this.shownChat.message.content);
+    for (const r of this.remotes.values()) {
+      r.avatar.setVisible(visible);
+      if (!visible) r.bubble.hide();
+    }
   }
+
 
   private floorPoint(pointer: Phaser.Input.Pointer): Vec2 {
     return screenToWorld(pointer.worldX, pointer.worldY);

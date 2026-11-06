@@ -35,13 +35,47 @@ export class NavGrid {
     return c >= 0 && r >= 0 && c < this.cols && r < this.rows && this.walkable[r * this.cols + c] === 1;
   }
 
-  /** Nearest walkable cell to a world point (by straight-line distance). */
-  nearestWalkableCell(p: Vec2): { c: number; r: number } | null {
+  /**
+   * The largest connected walkable area (cell ids r * cols + c). Furniture may
+   * leave tiny dead corners cut off from it; nobody should end up in one.
+   */
+  mainArea(): Set<number> {
+    const seen = new Uint8Array(this.cols * this.rows);
+    let best: number[] = [];
+    for (let start = 0; start < seen.length; start++) {
+      if (seen[start] || !this.walkable[start]) continue;
+      const area = [start];
+      seen[start] = 1;
+      for (let k = 0; k < area.length; k++) {
+        const id = area[k] as number;
+        const c = id % this.cols;
+        const r = (id - c) / this.cols;
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nc = c + dc;
+          const nr = r + dr;
+          const n = nr * this.cols + nc;
+          if (this.isWalkable(nc, nr) && !seen[n]) {
+            seen[n] = 1;
+            area.push(n);
+          }
+        }
+      }
+      if (area.length > best.length) best = area;
+    }
+    return new Set(best);
+  }
+
+  cellOf(p: Vec2): { c: number; r: number } {
+    return { c: Math.floor(p.x / this.cellSize), r: Math.floor(p.y / this.cellSize) };
+  }
+
+  /** Nearest walkable cell to a world point (by straight-line distance), optionally only within `area`. */
+  nearestWalkableCell(p: Vec2, area?: Set<number>): { c: number; r: number } | null {
     let best: { c: number; r: number } | null = null;
     let bestD = Infinity;
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
-        if (!this.isWalkable(c, r)) continue;
+        if (!this.isWalkable(c, r) || (area && !area.has(r * this.cols + c))) continue;
         const q = this.cellCenter(c, r);
         const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
         if (d < bestD) {

@@ -94,6 +94,17 @@ export class Avatar implements DepthItem {
     }
   }
 
+  get visible(): boolean {
+    return this.sprite.visible;
+  }
+
+  /** Shows or hides the character with its shadow and name tag (state keeps updating). */
+  setVisible(visible: boolean): void {
+    this.sprite.setVisible(visible);
+    this.shadow.setVisible(visible);
+    this.label?.setVisible(visible);
+  }
+
   /** Re-rasterizes the name tag for the current camera zoom. */
   setZoom(zoom: number): void {
     if (!this.label) return;

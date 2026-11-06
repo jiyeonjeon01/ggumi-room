@@ -198,7 +198,10 @@ export function createGame(
       if (!s || !s.sys.isActive() || editing) return null;
       editing = true;
       applyKeyboard();
-      const editor = new LayoutEditor(toLayout(currentRoom.furniture), s.getPlayerPos());
+      // The characters are hidden while decorating, so (like the server) the
+      // editor doesn't keep furniture off ours; the room moves it to a free
+      // spot of the main floor after saving.
+      const editor = new LayoutEditor(toLayout(currentRoom.furniture));
       s.startEdit(editor, onReject);
       return editor;
     },
