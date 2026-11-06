@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { deliveryOf, useChat, type ThreadMessage } from '../app/chat';
-import { useLayoutMode } from '../app/layout';
+import { useKeyboardInset, useLayoutMode } from '../app/layout';
 import { useLive } from '../app/live';
 
 const MAX_CHARS = 500;
@@ -53,6 +53,7 @@ export function ChatWindow() {
   const chat = useChat();
   const { presence } = useLive();
   const mode = useLayoutMode();
+  const keyboard = useKeyboardInset();
   const { open, thread } = chat;
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -104,7 +105,10 @@ export function ChatWindow() {
         type="button"
         onClick={() => chat.setMinimized(false)}
         aria-label={`${friend.nickname}님과의 채팅 열기${unread ? `, 읽지 않은 메시지 ${unread}개` : ''}`}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-plum-700 shadow-lg ring-1 ring-blush-200 hover:bg-blush-50"
+        className={`fixed right-4 z-40 flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm text-plum-700 shadow-lg ring-1 ring-blush-200 hover:bg-blush-50 ${
+          // Phone: above the room's chat bar and the tab bar, not over them.
+          mode === 'mobile' ? 'bottom-32 min-h-10' : 'bottom-4'
+        }`}
       >
         <span aria-hidden>💬</span>
         {friend.nickname}
@@ -117,6 +121,13 @@ export function ChatWindow() {
     const body = text.trim();
     if (!body || Array.from(body).length > MAX_CHARS) return;
     chat.send(body);
+    // Clearing while a phone IME still composes brings the last syllable
+    // back; a quick blur/refocus ends the composition and keeps the keyboard.
+    const el = inputRef.current;
+    if (composing.current && el) {
+      el.blur();
+      el.focus();
+    }
     setText('');
     setAtBottom(true);
   };
@@ -132,6 +143,8 @@ export function ChatWindow() {
   };
   const chars = Array.from(text).length;
   const sheet = mode === 'mobile';
+  // Phone keyboard up: the sheet fills the visible part above it, or the input would sit under the keys.
+  const sheetStyle = sheet && keyboard.bottom > 0 ? { top: keyboard.top + 8, bottom: keyboard.bottom + 8 } : undefined;
   const typing = chat.typing[friend.id];
 
   return (
@@ -139,17 +152,18 @@ export function ChatWindow() {
     <section
       role="region"
       aria-label={`${friend.nickname}님과의 채팅`}
+      style={sheetStyle}
       className={`fixed z-40 flex flex-col overflow-hidden bg-cream shadow-2xl ring-4 ring-white ${
-        sheet ? 'inset-x-2 bottom-2 top-[30vh] rounded-[24px]' : 'bottom-4 right-4 h-[440px] max-h-[calc(100vh-2rem)] w-[320px] rounded-[24px]'
+        sheet ? 'inset-x-2 bottom-2 top-[30%] rounded-[24px]' : 'bottom-4 right-4 h-[440px] max-h-[calc(100vh-2rem)] w-[320px] rounded-[24px]'
       }`}
     >
       <header className="flex items-center gap-2 border-b border-blush-100 bg-white/80 px-3 py-2">
         <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${dot}`} />
         <h2 className="min-w-0 flex-1 truncate text-plum-700">{friend.nickname}</h2>
-        <button type="button" onClick={() => chat.setMinimized(true)} aria-label="채팅 최소화" className="rounded-full px-2 text-plum-500 hover:bg-blush-100">
+        <button type="button" onClick={() => chat.setMinimized(true)} aria-label="채팅 최소화" className="rounded-full px-2 text-plum-500 hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10">
           ─
         </button>
-        <button type="button" onClick={() => chat.closeChat()} aria-label="채팅 닫기" className="rounded-full px-2 text-xl leading-none text-plum-500 hover:bg-blush-100">
+        <button type="button" onClick={() => chat.closeChat()} aria-label="채팅 닫기" className="rounded-full px-2 text-xl leading-none text-plum-500 hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10">
           ×
         </button>
       </header>
@@ -211,6 +225,7 @@ export function ChatWindow() {
           rows={1}
           value={text}
           maxLength={MAX_CHARS * 2}
+          enterKeyHint="send"
           placeholder="메시지를 입력해요"
           onChange={(e) => {
             setText(e.target.value);
@@ -220,9 +235,16 @@ export function ChatWindow() {
           onCompositionEnd={() => (composing.current = false)}
           onKeyDown={onKeyDown}
           onBlur={() => chat.setTyping(false)}
-          className="max-h-24 min-h-9 flex-1 resize-none rounded-2xl bg-white px-3 py-2 text-sm text-plum-700 ring-1 ring-blush-200 outline-none focus:ring-blush-400"
+          className="max-h-24 min-h-9 flex-1 resize-none rounded-2xl bg-white px-3 py-2 text-sm text-plum-700 pointer-coarse:min-h-10 pointer-coarse:text-base ring-1 ring-blush-200 outline-none focus:ring-blush-400"
         />
-        <button type="submit" disabled={!text.trim() || chars > MAX_CHARS} className="shrink-0 rounded-full bg-blush-400 px-3 py-2 text-sm text-white shadow hover:bg-blush-500 disabled:bg-blush-200">
+        <button
+          type="submit"
+          disabled={!text.trim() || chars > MAX_CHARS}
+          // Keep focus in the input so the phone keyboard stays up between messages.
+          onPointerDown={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.preventDefault()}
+          className="shrink-0 rounded-full bg-blush-400 px-3 py-2 text-sm text-white shadow hover:bg-blush-500 disabled:bg-blush-200 pointer-coarse:min-h-10 pointer-coarse:px-4"
+        >
           보내기
         </button>
       </form>
