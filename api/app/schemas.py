@@ -51,18 +51,54 @@ class LayoutIn(BaseModel):
     items: list[RoomItemIn] = Field(max_length=200)
 
 
+class PartyInfoOut(BaseModel):
+    """Party rooms only. Everyone inside already came through the link, so they may share it too."""
+
+    share_url: str
+    capacity: int
+    # People inside right now (or holding a seat after a dropped connection).
+    count: int
+
+
 class RoomOut(BaseModel):
     id: uuid.UUID
     name: str
     theme: Theme
     owner_id: uuid.UUID
     owner_nickname: str
-    # How the viewer may be here.
-    access: Literal["owner", "friend", "guest"]
+    # How the viewer may be here ("member": joined a party by its link).
+    access: Literal["owner", "friend", "guest", "member"]
     updated_at: datetime
     layout_version: int
     items: list[RoomItemOut]
     guestbook_enabled: bool = True
+    kind: Literal["personal", "party"] = "personal"
+    # Size and fixed setup (shared/furniture.json "templates"); "personal" is the classic room.
+    template: str = "personal"
+    party: PartyInfoOut | None = None
+
+
+class PartyOut(BaseModel):
+    room_id: uuid.UUID
+    name: str
+    share_url: str
+    capacity: int
+    count: int
+
+
+class PartyPreviewOut(BaseModel):
+    """What a logged-in link holder sees before joining."""
+
+    status: Literal["open", "closed", "not_found"]
+    room_id: uuid.UUID | None = None
+    name: str | None = None
+    host_nickname: str | None = None
+    capacity: int | None = None
+    count: int | None = None
+
+
+class PartyJoinOut(BaseModel):
+    room_id: uuid.UUID
 
 
 class MeOut(BaseModel):

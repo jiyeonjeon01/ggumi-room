@@ -291,6 +291,19 @@ def test_second_tab_takes_over_the_character(tc):
         assert [m.conn.user_id for m in room.members.values()].count(uuid.UUID(b.id)) == 1
 
 
+def test_second_tab_of_someone_alone_keeps_the_room_shared(tc):
+    """Regression: taking over from your own tab while alone used to leave the new tab in a
+    room nobody else could reach (the old one was dropped as empty)."""
+    a, b = User(tc, "꾸미", "ggumi01"), User(tc, "토리", "tori01")
+    befriend(a, b)
+    with a.ws() as t1, a.ws() as t2, b.ws() as wb:
+        join(t1, a.room)
+        mine = join(t2, a.room)["you"]["id"]
+        recv(t1, "room.replaced")
+        assert [m["id"] for m in join(wb, a.room)["members"]] == [mine]
+        assert recv(t2, "room.join")["member"]["user_id"] == b.id
+
+
 def test_layout_and_theme_changes_reach_visitors(tc, monkeypatch):
     a, b = User(tc, "꾸미", "ggumi01"), User(tc, "토리", "tori01")
     befriend(a, b)

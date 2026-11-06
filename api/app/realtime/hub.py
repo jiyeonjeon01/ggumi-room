@@ -22,6 +22,17 @@ Policy for several tabs/devices of one user:
 - inside one room a user has a single character: joining the same room from
   another tab moves the older tab out of the room (it gets `room.replaced`
   and shows a "this room is open elsewhere" notice).
+
+Party rooms (kind "party") also have:
+- a capacity in people (distinct accounts), not connections; a second tab or
+  device of someone inside takes over their character and never needs a seat;
+- a seat hold: a dropped connection keeps its seat for SEAT_HOLD_S, so a
+  reload or a short network loss gets back in even when the room fills up
+  meanwhile (an explicit leave frees the seat at once);
+- the capacity check and the seat taking run without yielding to the event
+  loop, so concurrent joins can never overfill a room;
+- "occupied" (someone inside or holding a seat) changes are reported through
+  `on_occupancy`, which the party lifecycle stores (it closes rooms left empty).
 """
 
 import asyncio
@@ -39,7 +50,7 @@ from fastapi import WebSocket
 from starlette.concurrency import run_in_threadpool
 
 from ..config import get_settings
-from ..layout import catalog
+from ..layout import catalog, room_template
 from .geometry import RoomGeometry
 
 FACINGS = frozenset({"front-right", "front-left", "back-right", "back-left"})
@@ -53,6 +64,9 @@ AWAY_AFTER_S = get_settings().presence_away_s
 OFFLINE_GRACE_S = get_settings().presence_grace_s
 # Often enough that "away" shows up within a few percent of the threshold.
 SWEEP_EVERY_S = min(15.0, AWAY_AFTER_S / 5)
+# Party rooms: people inside at once, and how long a dropped connection keeps its seat.
+PARTY_CAPACITY = 10
+SEAT_HOLD_S = 60.0
 
 
 def now() -> float:
@@ -124,6 +138,18 @@ class RoomState:
     owner_id: uuid.UUID
     geometry: RoomGeometry
     members: dict[str, Member] = field(default_factory=dict)
+    kind: str = "personal"
+    template: str = "personal"
+    # People inside at once (None: no limit, personal rooms).
+    capacity: int | None = None
+    # Seats kept for people whose connection dropped: user id -> timer that frees it.
+    holds: dict[uuid.UUID, asyncio.TimerHandle] = field(default_factory=dict)
+    # Last occupancy reported through Hub.on_occupancy.
+    occupied: bool = False
+
+    def people(self) -> set[uuid.UUID]:
+        """Accounts inside or holding a seat (several tabs of one account count once)."""
+        return {m.conn.user_id for m in self.members.values()} | set(self.holds)
 
 
 class Hub:
@@ -136,14 +162,24 @@ class Hub:
         self._sweeper: asyncio.Task | None = None
         # Who is friends with whom (DB lookup, set by the WebSocket module).
         self.friend_ids = lambda user_id: []
+        # Party lifecycle: called (in a worker thread) with (room id, occupied) after a party
+        # room fills or empties. Set by the parties module.
+        self.on_occupancy = None
+        self._occupancy_locks: dict[uuid.UUID, asyncio.Lock] = {}
+        # Rooms closed while this process runs; a join that passed the DB check just before
+        # the close is still refused.
+        self.closed_rooms: set[uuid.UUID] = set()
 
     def reset(self) -> None:
         """Tests only."""
         for h in self._offline_timers.values():
             h.cancel()
-        friend_ids = self.friend_ids
+        for room in self.rooms.values():
+            for h in room.holds.values():
+                h.cancel()
+        friend_ids, on_occupancy = self.friend_ids, self.on_occupancy
         self.__init__()
-        self.friend_ids = friend_ids
+        self.friend_ids, self.on_occupancy = friend_ids, on_occupancy
 
     # ------------------------------------------------------------ connections
 
@@ -160,7 +196,8 @@ class Hub:
     async def unregister(self, conn: Conn) -> None:
         conn.closed = True
         self.conns.pop(conn.id, None)
-        await self.leave_room(conn)
+        # A dropped connection keeps its party seat for a while (a logout doesn't).
+        self._leave(conn, hold=conn.close_code != 4401)
         if self.user_conns(conn.user_id):
             await self.refresh_presence(conn.user_id)
         elif conn.close_code == 4401:
@@ -284,35 +321,141 @@ class Hub:
             if m.conn is not skip:
                 self.send(m.conn, msg)
 
-    async def join_room(self, conn: Conn, room_id: uuid.UUID, owner_id: uuid.UUID, items: list[dict[str, Any]], x: Any, y: Any, f: Any) -> None:
-        await self.leave_room(conn)
+    async def join_room(
+        self,
+        conn: Conn,
+        room_id: uuid.UUID,
+        owner_id: uuid.UUID,
+        items: list[dict[str, Any]],
+        x: Any,
+        y: Any,
+        f: Any,
+        kind: str = "personal",
+        template: str = "personal",
+    ) -> bool:
+        """Puts the connection's character in the room. False when refused (party full or closed).
+
+        Nothing in here awaits: the capacity check and taking the seat happen in one step of
+        the event loop, so concurrent joins can't both take the last seat.
+        """
+        self._leave(conn, hold=False)
+        if room_id in self.closed_rooms:
+            self.send(conn, {"t": "room.denied", "code": "closed"})
+            return False
         room = self.rooms.get(room_id)
         if room is None:
-            room = self.rooms[room_id] = RoomState(room_id, owner_id, RoomGeometry.from_items(items))
+            room = RoomState(
+                room_id,
+                owner_id,
+                RoomGeometry.from_items(items, template),
+                kind=kind,
+                template=template,
+                capacity=PARTY_CAPACITY if kind == "party" else None,
+            )
+        people = room.people()
+        if room.capacity is not None and conn.user_id not in people and len(people) >= room.capacity:
+            self.send(conn, {"t": "room.denied", "code": "full", "count": len(people), "capacity": room.capacity})
+            return False
+        self.rooms[room_id] = room
+        hold = room.holds.pop(conn.user_id, None)
+        if hold:
+            hold.cancel()
         # One character per user per room: the older tab steps out.
         for other in [m for m in room.members.values() if m.conn.user_id == conn.user_id]:
             self.send(other.conn, {"t": "room.replaced"})
-            await self.leave_room(other.conn)
+            self._remove(room, other.conn)
         r = catalog()["playerRadius"]
-        spawn = catalog()["room"]["spawn"]
+        spawn = room_template(template)["spawn"]
         px, py = (x, y) if _num(x) and _num(y) else (spawn["x"], spawn["y"])
         if not room.geometry.is_free(px, py, r * 0.9):
             px, py = room.geometry.nearest_free(px, py, r)
         member = Member(conn, float(px), float(py), f if f in FACINGS else "front-right")
         room.members[conn.id] = member
         conn.room = room
-        self.send(conn, {"t": "room.state", "room": str(room_id), "you": member.public(), "members": [m.public() for m in room.members.values() if m is not member]})
+        state = {"t": "room.state", "room": str(room_id), "you": member.public(), "members": [m.public() for m in room.members.values() if m is not member]}
+        if room.capacity is not None:
+            state |= {"count": len(room.people()), "capacity": room.capacity}
+        self.send(conn, state)
         self.broadcast(room, {"t": "room.join", "member": member.public()}, skip=conn)
+        self._people_changed(room)
+        return True
 
     async def leave_room(self, conn: Conn) -> None:
+        """Stepping out on purpose (another room, leaving the page): the seat is freed at once."""
+        self._leave(conn, hold=False)
+
+    def _leave(self, conn: Conn, hold: bool) -> None:
         room = conn.room
         if room is None:
             return
+        self._remove(room, conn)
+        if hold and room.capacity is not None and conn.user_id not in room.people():
+            loop = asyncio.get_running_loop()
+            room.holds[conn.user_id] = loop.call_later(SEAT_HOLD_S, self._hold_over, room, conn.user_id)
+        self._people_changed(room)
+
+    def _remove(self, room: RoomState, conn: Conn) -> None:
         conn.room = None
         if room.members.pop(conn.id, None) is not None:
             self.broadcast(room, {"t": "room.leave", "id": conn.id})
-        if not room.members:
+
+    def _hold_over(self, room: RoomState, user_id: uuid.UUID) -> None:
+        if room.holds.pop(user_id, None) is not None:
+            self._people_changed(room)
+
+    def _people_changed(self, room: RoomState) -> None:
+        """After someone came or went: drop an empty room, share the head count, report occupancy."""
+        if not room.members and not room.holds and self.rooms.get(room.id) is room:
             self.rooms.pop(room.id, None)
+        if room.capacity is None:
+            return
+        self.broadcast(room, {"t": "room.count", "count": len(room.people()), "capacity": room.capacity})
+        occupied = bool(room.members or room.holds)
+        if occupied != room.occupied:
+            room.occupied = occupied
+            self._report_occupancy(room.id)
+
+    def _report_occupancy(self, room_id: uuid.UUID) -> None:
+        if self.on_occupancy is None:
+            return
+        lock = self._occupancy_locks.setdefault(room_id, asyncio.Lock())
+
+        async def write() -> None:
+            # One write at a time per room, each storing the state as it is when the write runs,
+            # so the last stored value is the current one whatever order events came in.
+            async with lock:
+                try:
+                    await run_in_threadpool(self.on_occupancy, room_id, self.party_occupied(room_id))
+                except Exception:
+                    pass  # the lifecycle sweep re-asserts occupancy every minute
+
+        asyncio.get_running_loop().create_task(write())
+
+    def party_occupied(self, room_id: uuid.UUID) -> bool:
+        room = self.rooms.get(room_id)
+        return bool(room and (room.members or room.holds))
+
+    def party_count(self, room_id: uuid.UUID) -> int:
+        room = self.rooms.get(room_id)
+        return len(room.people()) if room else 0
+
+    def occupied_parties(self) -> list[uuid.UUID]:
+        return [r.id for r in self.rooms.values() if r.kind != "personal" and (r.members or r.holds)]
+
+    def close_room(self, room_id: uuid.UUID) -> None:
+        """The party ended (host closed it, or it stayed empty): everyone inside is told and steps out."""
+        self.closed_rooms.add(room_id)
+        room = self.rooms.pop(room_id, None)
+        if room is None:
+            return
+        for h in room.holds.values():
+            h.cancel()
+        room.holds.clear()
+        for m in list(room.members.values()):
+            self.send(m.conn, {"t": "room.closed"})
+            m.conn.room = None
+        room.members.clear()
+        room.occupied = False
 
     def move(self, conn: Conn, x: Any, y: Any, f: Any, s: Any) -> None:
         """Checks a reported position against speed, walls and furniture before passing it on."""
@@ -405,15 +548,15 @@ class Hub:
             self.broadcast(room, {"t": "room.theme", "theme": theme})
 
     def drop_from_rooms(self, user_id: uuid.UUID, owner_id: uuid.UUID) -> None:
-        """Access to `owner_id`'s rooms was lost (unfriended): step out of them."""
-        for room in [r for r in self.rooms.values() if r.owner_id == owner_id]:
+        """Access to `owner_id`'s personal room was lost (unfriended): step out of it.
+
+        Parties they host aren't affected: those go by the party's member list, not friendship.
+        """
+        for room in [r for r in self.rooms.values() if r.owner_id == owner_id and r.kind == "personal"]:
             for m in [m for m in room.members.values() if m.conn.user_id == user_id]:
                 self.send(m.conn, {"t": "room.denied", "code": "no_access"})
-                room.members.pop(m.conn.id, None)
-                m.conn.room = None
-                self.broadcast(room, {"t": "room.leave", "id": m.conn.id})
-            if not room.members:
-                self.rooms.pop(room.id, None)
+                self._remove(room, m.conn)
+            self._people_changed(room)
 
 
 def _num(v: Any) -> bool:

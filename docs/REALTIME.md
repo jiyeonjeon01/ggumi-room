@@ -70,7 +70,7 @@
 |---|---|---|
 | `welcome` | `id`, `user_id`, `nickname` | 연결 확인 (이때부터 "연결됨") |
 | `pong` | | |
-| `room.state` | `room`, `you`, `members[]` | 입장 결과. `you`는 서버가 정한 내 위치 |
+| `room.state` | `room`, `you`, `members[]` (+파티: `count`, `capacity`) | 입장 결과. `you`는 서버가 정한 내 위치 |
 | `room.join` / `room.leave` | `member` / `id` | 다른 사람이 들어오거나 나감 |
 | `move` | `id`, `x`, `y`, `f`, `s` | 다른 사람 이동 (보낸 사람에게는 안 감) |
 | `move.fix` | `x`, `y` | 내 이동이 거절됨: 서버가 마지막으로 인정한 위치로 돌아감 |
@@ -78,7 +78,9 @@
 | `room.layout` | `version`, `items` | 주인이 배치를 저장함 |
 | `room.theme` | `theme` | 주인이 테마를 바꿈 |
 | `room.replaced` | | 내 다른 탭·기기가 이 방에 들어와서 여기서는 빠짐 |
-| `room.denied` | `code` | 들어갈 권한이 없음(또는 친구 해제로 잃음) |
+| `room.denied` | `code` (+`full`일 때 `count`, `capacity`) | `no_access` 권한 없음(또는 친구 해제로 잃음), `full` 파티 정원 초과, `closed` 끝난 파티 |
+| `room.count` | `count`, `capacity` | 파티룸 인원(좌석 유예 포함)이 바뀜 |
+| `room.closed` | | 파티룸이 끝남(방장이 끝냈거나 비어서 자동 종료). 방에서 빠짐 |
 | `error` | `code` | `chat_rate`, `not_in_room`, `rate` |
 
 ### 접근 권한
@@ -198,6 +200,42 @@ API 환경 변수 `PRESENCE_AWAY_S`(자리비움 기준, 기본 300초), `PRESEN
 - **배치**: 데스크톱은 오른쪽 아래 320×440 창(친구 패널 위, 게임 화면은 가리지 않음), 모바일은 화면 아래쪽 시트(위 30%는 게임이 보임). 최소화하면 이름과 읽지 않은 수만 있는 알약 버튼.
 - Enter 보내기, Shift+Enter 줄바꿈, 한글 조합 중 Enter는 보내지 않음, Esc 최소화. 채팅창은 모달이 아니라서 꾸미기 단축키를 막지 않습니다.
 - 재연결하면 대화 목록(읽지 않은 수)과 열린 대화를 다시 불러와 끊긴 동안의 메시지를 채웁니다.
+
+## 임시 파티룸
+
+개인 방과 같은 `rooms` 테이블에 `kind = 'party'`로 저장합니다(나중의 상설 아지트도 `kind`만 추가). 크기·고정 가구는 `template`(`lounge`, `shared/furniture.json`의 `templates`)에서 오고, 가구 편집·테마 변경·방명록·초대 링크는 없습니다.
+
+### DB (`9ef42a96338f`)
+- `rooms`: `kind`(기존 방은 모두 `personal`), `template`, `link_token`(공유 링크, unique), `closes_at`, `closed_at`, `last_active_at` 추가. `visibility`에 `link` 허용. 방장당 열린 파티는 하나(부분 unique 인덱스).
+- `room_members`: 방장(`host`)과 링크로 참가한 사람(`member`).
+
+### 권한 (`access.room_access`)
+- 개인 방: 주인 / 친구 / 초대 수락한 손님 — 기존 그대로.
+- 파티: 주인 / `room_members`만. 방장의 친구라는 이유로 들어올 수 없고, 파티 링크로 개인 방에 들어갈 수도 없습니다. 끝난 파티는 아무도 못 들어갑니다.
+- 친구 끊기는 개인 방에서만 내보냅니다(`drop_from_rooms`).
+- 로그아웃 상태에서는 파티 API가 모두 401이라 이름·방장·인원 등 아무것도 보이지 않습니다.
+
+### HTTP API (세션 + CSRF)
+| 요청 | 설명 |
+|---|---|
+| `POST /api/parties` | 만들기(201). 이미 열린 게 있으면 409 + `room_id`. 시간당 5번 |
+| `GET /api/parties/mine` | 내가 연 파티(없으면 `null`) |
+| `GET /api/parties/join/{token}` | 미리보기: `open`(이름·방장·인원) / `closed` / `not_found` |
+| `POST /api/parties/join/{token}` | 참가자로 등록(친구가 아니어도). 끝났으면 410 |
+| `POST /api/parties/{id}/close` | 방장만 끝내기(204). 다른 사람은 404 |
+
+### 정원 (10명)
+- 사람(계정) 단위입니다. 같은 계정의 여러 탭·기기는 한 명이고, 나중 탭이 캐릭터를 넘겨받습니다(`room.replaced`).
+- 정원 확인과 자리 차지는 `Hub.join_room` 안에서 이벤트 루프를 양보하지 않고(await 없이) 한 번에 처리해서, 동시에 들어와도 10명을 넘지 않습니다.
+- 연결이 끊기면(새로고침·네트워크) 그 자리를 60초 맡아 둡니다. 그 사이 방이 차도 돌아오면 들어갈 수 있고, 인원 표시에도 포함됩니다. 직접 나가거나 로그아웃하면 바로 비웁니다.
+- 꽉 차면 `room.denied {code: "full"}`. 대기열은 없고, 화면의 다시 시도 버튼으로 `join`을 다시 보냅니다.
+
+### 수명 (`realtime/parties.py`)
+- 안에 누가 있으면(자리 유예 포함) `closes_at = NULL`, 1분마다 `last_active_at` 갱신.
+- 마지막 사람이 나가면 `closes_at = 지금 + 30분`. 아무도 안 들어온 새 파티도 만든 지 30분 뒤.
+- 1분마다 정리: `closes_at`이 지났고 Hub에 아무도 없는 방만 `closed_at`을 기록하고 `room.closed`를 보냅니다. 종료 결정 직후부터 새 입장은 거절합니다. 끝난 지 7일 지난 파티는 지웁니다.
+- 방장이 나가도 남은 사람이 있으면 계속 열려 있습니다.
+- **재시작·장애**: 시작할 때 열린 파티마다 `closes_at`을 "원래 시각"과 "지금 + 2분" 중 늦은 쪽으로 맞춥니다. 사람이 있던 채로 멈춘 방(`closes_at = NULL`)은 마지막 갱신 + 30분. 그래서 재접속할 시간이 항상 있고, 사람이 돌아오면 다시 열린 상태가 됩니다. DB에 닿지 않으면 아무것도 닫지 않습니다. 비었다는 기록이 유실돼도 다음 정리 때 같은 규칙으로 복구합니다.
 
 ## 여러 서버로 늘릴 때
 

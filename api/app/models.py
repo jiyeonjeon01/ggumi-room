@@ -77,9 +77,20 @@ class Room(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(30), nullable=False)
     theme: Mapped[str] = mapped_column(String(16), nullable=False, default="pastel", server_default="pastel")
-    # Who may enter: owner, friends, and users who accepted an invite (room_guests).
+    # Who may enter. personal ("friends"): owner, friends, users who accepted an invite (room_guests).
+    # party ("link"): members who joined through the room's link (room_members).
     visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="friends", server_default="friends")
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # "personal": a user's own room. "party": a temporary lounge anyone with the link can join
+    # (later also "hideout": a lasting shared room). Size and fixed setup come from `template`.
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="personal", server_default="personal")
+    template: Mapped[str] = mapped_column(String(16), nullable=False, default="personal", server_default="personal")
+    # Party rooms only: the share link, when an empty room closes, when it closed, and the last
+    # time someone was inside (written while occupied, so a restart knows how long it was empty).
+    link_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Bumped on every saved furniture layout; a save must name the version it
     # started from, so two editors can't silently overwrite each other.
     layout_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -92,9 +103,12 @@ class Room(Base):
 
     __table_args__ = (
         CheckConstraint(f"theme IN {THEMES}", name="rooms_theme_check"),
-        CheckConstraint("visibility IN ('friends')", name="rooms_visibility_check"),
+        CheckConstraint("visibility IN ('friends', 'link')", name="rooms_visibility_check"),
+        CheckConstraint("kind IN ('personal', 'party')", name="rooms_kind_check"),
         # One default room per user.
         Index("rooms_one_default_per_owner", "owner_id", unique=True, postgresql_where=text("is_default")),
+        # One open party room per host.
+        Index("rooms_one_open_party_per_owner", "owner_id", unique=True, postgresql_where=text("kind = 'party' AND closed_at IS NULL")),
     )
 
 
@@ -251,3 +265,16 @@ class GuestbookEntry(Base):
         CheckConstraint("char_length(body) BETWEEN 1 AND 100", name="guestbook_body_length"),
         Index("guestbook_room_newest", "room_id", "created_at"),
     )
+
+
+class RoomMember(Base):
+    """Who belongs to a shared room (party now, hideout later): the host and people who joined by link."""
+
+    __tablename__ = "room_members"
+
+    room_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="member", server_default="member")
+    joined_at: Mapped[datetime] = _created()
+
+    __table_args__ = (CheckConstraint("role IN ('host', 'member')", name="room_members_role_check"),)

@@ -27,7 +27,7 @@ from ..config import get_settings
 from ..db import SessionLocal, utcnow
 from ..deps import SESSION_COOKIE
 from ..models import Friendship, Room, User, UserSession
-from ..routers.rooms import _items
+from ..routers.rooms import _items, _was_in
 from ..security import token_hash
 from . import hub as hub_mod
 from .hub import Conn, hub, now
@@ -60,13 +60,21 @@ def _session_alive(th: str) -> bool:
     return expires is not None and expires > utcnow()
 
 
-def _room_for(user_id: uuid.UUID, room_id: uuid.UUID) -> tuple[uuid.UUID, list[dict[str, Any]]] | None:
-    """(owner id, layout) when the user may be in the room, else None."""
+def _room_for(user_id: uuid.UUID, room_id: uuid.UUID) -> dict[str, Any] | str:
+    """The room's owner, layout, kind and template when the user may be in it;
+    else "closed" (a party they were in has ended) or "no_access"."""
     with SessionLocal() as db:
         room, user = db.get(Room, room_id), db.get(User, user_id)
+        if room and user and room.kind == "party" and room.closed_at is not None:
+            return "closed" if _was_in(db, room, user) else "no_access"
         if not room or not user or room_access(db, room, user) is None:
-            return None
-        return room.owner_id, [i.model_dump() for i in _items(db, room)]
+            return "no_access"
+        return {
+            "owner_id": room.owner_id,
+            "items": [i.model_dump() for i in _items(db, room)],
+            "kind": room.kind,
+            "template": room.template,
+        }
 
 
 def friend_ids(user_id: uuid.UUID) -> list[uuid.UUID]:
@@ -202,11 +210,12 @@ async def _handle(conn: Conn, msg: dict[str, Any]) -> None:
         found = await run_in_threadpool(_room_for, conn.user_id, room_id)
         if conn.closed:
             return
-        if found is None:
-            hub.send(conn, {"t": "room.denied", "code": "no_access"})
+        if isinstance(found, str):
+            hub.send(conn, {"t": "room.denied", "code": found})
             return
-        owner_id, items = found
-        await hub.join_room(conn, room_id, owner_id, items, msg.get("x"), msg.get("y"), msg.get("f"))
+        await hub.join_room(
+            conn, room_id, found["owner_id"], found["items"], msg.get("x"), msg.get("y"), msg.get("f"), kind=found["kind"], template=found["template"]
+        )
     elif t == "activity":
         await hub.activity(conn, msg.get("idle_ms"))
     elif t == "presence.sync":

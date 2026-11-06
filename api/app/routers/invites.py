@@ -98,7 +98,7 @@ def _lookup(db: Session, token: str) -> tuple[str, RoomInvitation | None, Room |
         select(RoomInvitation, Room, User)
         .join(Room, Room.id == RoomInvitation.room_id)
         .join(User, User.id == Room.owner_id)
-        .where(RoomInvitation.token == token)
+        .where(RoomInvitation.token == token, Room.kind == "personal")
     ).first()
     if not row:
         return "not_found", None, None, None
