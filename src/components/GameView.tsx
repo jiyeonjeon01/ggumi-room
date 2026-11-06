@@ -58,10 +58,17 @@ export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, e
     if (controlsRef) controlsRef.current = { startEdit: (r) => handle.startEdit(r), endEdit: (l) => handle.endEdit(l) };
 
     // Any text field on the page (chat, friend search, forms) pauses game
-    // keys, so typing never walks the character. focusout is read on the next
-    // tick, once focus has settled on its new element.
+    // keys, so typing never walks the character.
     const sync = () => handle.setKeyboardEnabled(!isTextEntry(document.activeElement));
-    const onFocusOut = () => window.setTimeout(sync, 0);
+    // Leaving a field turns keys back on right away, judged by where focus is
+    // going (relatedTarget): Phaser drops key events while its keyboard is
+    // off, so waiting a tick lost a key pressed just after Esc (seen 13 of 25
+    // runs with Esc then D). The next-tick sync still corrects odd cases
+    // (focus leaving the window, elements removed while focused).
+    const onFocusOut = (e: FocusEvent) => {
+      handle.setKeyboardEnabled(!isTextEntry(e.relatedTarget instanceof Element ? e.relatedTarget : null));
+      window.setTimeout(sync, 0);
+    };
     // Phaser cancels the canvas's default pointer behavior, so clicking the
     // room wouldn't move focus off a text field and WASD would keep typing
     // there. Clicking the game hands the keyboard back to the game.
