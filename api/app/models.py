@@ -83,6 +83,8 @@ class Room(Base):
     # Bumped on every saved furniture layout; a save must name the version it
     # started from, so two editors can't silently overwrite each other.
     layout_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # The owner can close the guestbook (nobody can write; nothing is shown).
+    guestbook_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow, server_default=func.now()
@@ -229,4 +231,23 @@ class Message(Base):
         CheckConstraint("char_length(body) BETWEEN 1 AND 500", name="messages_body_length"),
         Index("messages_conversation_seq", "conversation_id", "seq"),
         Index("messages_sender_client", "sender_id", "client_id", unique=True),
+    )
+
+
+class GuestbookEntry(Base):
+    """A short note left in someone's room. Deleting only hides it (deleted_at / deleted_by)."""
+
+    __tablename__ = "guestbook_entries"
+
+    id: Mapped[uuid.UUID] = _id()
+    room_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = _created()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+    __table_args__ = (
+        CheckConstraint("char_length(body) BETWEEN 1 AND 100", name="guestbook_body_length"),
+        Index("guestbook_room_newest", "room_id", "created_at"),
     )

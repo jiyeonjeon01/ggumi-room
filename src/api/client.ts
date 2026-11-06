@@ -99,6 +99,21 @@ export interface RoomInfo {
   updated_at: string;
   layout_version: number;
   items: { type: string; x: number; y: number; facing: number }[];
+  guestbook_enabled: boolean;
+}
+
+export interface GuestbookEntry {
+  id: string;
+  author: { id: string; nickname: string };
+  body: string;
+  created_at: string;
+  can_delete: boolean;
+}
+
+export interface GuestbookPage {
+  enabled: boolean;
+  entries: GuestbookEntry[];
+  has_more: boolean;
 }
 
 export interface PublicUser {

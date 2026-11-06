@@ -17,6 +17,7 @@ export function MyPanel({
   onTheme,
   onInvite,
   onDecorate,
+  onGuestbook,
   onNavigate,
 }: {
   me: Me;
@@ -25,6 +26,7 @@ export function MyPanel({
   onInvite: () => void;
   /** Starts decorating (furniture). */
   onDecorate: () => void;
+  onGuestbook: () => void;
   /** Lets a drawer/sheet close itself when leaving the room. */
   onNavigate?: () => void;
 }) {
@@ -71,6 +73,9 @@ export function MyPanel({
           <Button variant="soft" className="w-full" onClick={onDecorate}>
             🛋 방 꾸미기
           </Button>
+          <Button variant="soft" className="w-full" onClick={onGuestbook}>
+            📒 방명록
+          </Button>
           <Button className="w-full" onClick={onInvite}>
             💌 친구 초대하기
           </Button>
@@ -84,6 +89,9 @@ export function MyPanel({
               <p className="truncate text-plum-700">{room.owner_nickname}</p>
             </div>
           </section>
+          <Button variant="soft" className="w-full" onClick={onGuestbook}>
+            📒 방명록 남기기
+          </Button>
           <Button className="w-full" onClick={() => (onNavigate?.(), navigate('/'))}>
             🏠 내 방으로 돌아가기
           </Button>

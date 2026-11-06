@@ -47,6 +47,7 @@ def room_out(db: Session, room: Room, owner: User, access: str) -> RoomOut:
         updated_at=room.updated_at,
         layout_version=room.layout_version,
         items=_items(db, room),
+        guestbook_enabled=room.guestbook_enabled,
     )
 
 
@@ -81,6 +82,8 @@ def patch_room(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="방을 찾을 수 없거나 바꿀 권한이 없어요.")
     if body.theme is not None:
         room.theme = body.theme
+    if body.guestbook_enabled is not None:
+        room.guestbook_enabled = body.guestbook_enabled
     db.commit()
     if body.theme is not None:
         notify(hub.theme_changed, room.id, room.theme)

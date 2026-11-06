@@ -9,6 +9,7 @@ import { navigate, setLeaveGuard, useRoute } from './app/router';
 import { FriendsProvider, useFriends } from './app/friends';
 import { ChatWindow } from './components/ChatWindow';
 import { FriendOfferModal } from './components/FriendOfferModal';
+import { GuestbookModal } from './components/GuestbookModal';
 import { FriendsPanel } from './components/FriendsPanel';
 import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
@@ -265,6 +266,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
 
   // Entered through the owner's invite link: offer a friend request once (see inviteArrival).
   const [offer, setOffer] = useState<InviteArrival | null>(null);
+  const [guestbookOpen, setGuestbookOpen] = useState(false);
   const myId = me?.id;
   useEffect(() => {
     const a = inviteArrival.peek(info.id);
@@ -448,6 +450,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
                 onTheme={saveTheme}
                 onInvite={() => (close?.(), void invite())}
                 onDecorate={() => (close?.(), startEditing())}
+                onGuestbook={() => (close?.(), setGuestbookOpen(true))}
                 onNavigate={close}
               />
             )
@@ -477,6 +480,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
           )
         }
     />
+    {guestbookOpen && <GuestbookModal room={info} onClose={() => setGuestbookOpen(false)} onRoom={onInfo} />}
     {offer && (
       <FriendOfferModal
         arrival={offer}

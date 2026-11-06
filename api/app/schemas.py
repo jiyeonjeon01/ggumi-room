@@ -62,6 +62,7 @@ class RoomOut(BaseModel):
     updated_at: datetime
     layout_version: int
     items: list[RoomItemOut]
+    guestbook_enabled: bool = True
 
 
 class MeOut(BaseModel):
@@ -74,6 +75,7 @@ class MeOut(BaseModel):
 
 class RoomPatchIn(BaseModel):
     theme: Theme | None = None
+    guestbook_enabled: bool | None = None
 
 
 class PublicUserOut(BaseModel):

@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import ratelimit  # noqa: E402
 from app.main import app  # noqa: E402
 
-TABLES = "messages, conversations, room_items, room_guests, room_invitations, friendships, friend_requests, user_sessions, rooms, users"
+TABLES = "guestbook_entries, messages, conversations, room_items, room_guests, room_invitations, friendships, friend_requests, user_sessions, rooms, users"
 
 
 @pytest.fixture(scope="session", autouse=True)
