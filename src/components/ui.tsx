@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useKeyboardInset } from '../app/layout';
 
 /** Small pastel UI kit matching the room page (blush/plum/lavender, rounded, soft rings). */
 
@@ -67,14 +68,26 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // Phones: a virtual keyboard covers the bottom of the screen (iOS doesn't
+  // resize the page for it), so the sheet sits in the part still visible and
+  // the field being typed in is scrolled into view.
+  const keyboard = useKeyboardInset();
+  const lifted = keyboard.bottom > 0;
+  useEffect(() => {
+    if (lifted) document.activeElement?.scrollIntoView({ block: 'nearest' });
+  }, [lifted, keyboard.height]);
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-plum-900/30 p-3 sm:items-center" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-plum-900/30 p-3 sm:items-center"
+      style={lifted ? { top: keyboard.top, bottom: keyboard.bottom } : undefined}
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-md flex-col rounded-[28px] bg-cream p-5 shadow-xl ring-4 ring-white"
+        className="flex max-h-[min(85dvh,100%)] w-full max-w-md flex-col rounded-[28px] bg-cream p-5 shadow-xl ring-4 ring-white"
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg text-plum-700">{title}</h2>

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useLayoutMode, useStoredFlag } from '../app/layout';
+import { useKeyboardInset, useLayoutMode, useStoredFlag } from '../app/layout';
 import { Modal } from './ui';
 
 /** The right panel holds friends and party rooms (see SocialPanel). */
@@ -238,6 +238,8 @@ function TabButton({ icon, label, badge = 0, unread = 0, expanded, onClick }: { 
 
 /** Tablet slide-over panel. Esc or the backdrop closes it. */
 function Drawer({ side, title, onClose, children }: { side: 'left' | 'right'; title: string; onClose: () => void; children: ReactNode }) {
+  // Tablets: keep the panel above an on-screen keyboard (friend search).
+  const keyboard = useKeyboardInset();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -250,6 +252,7 @@ function Drawer({ side, title, onClose, children }: { side: 'left' | 'right'; ti
         aria-modal="true"
         aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
+        style={keyboard.bottom > 0 ? { top: keyboard.top + 12, bottom: keyboard.bottom + 12 } : undefined}
         className={`absolute inset-y-3 flex w-[320px] max-w-[85vw] flex-col rounded-[28px] bg-cream p-4 shadow-xl ring-4 ring-white ${side === 'left' ? 'left-3' : 'right-3'}`}
       >
         <div className="mb-3 flex items-center justify-between">

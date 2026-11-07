@@ -44,8 +44,21 @@ body,
   height: 100%;
 }
 
+/* Follows the phone browser's address bar as it shows and hides. */
+#root {
+  height: 100dvh;
+}
+
+html {
+  /* Taps act at once: no double-tap zoom on buttons (pinch zoom still works). */
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
+  /* Korean wraps between words, not inside them; very long words still break. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   background: var(--color-blush-50);
   color: var(--color-plum-900);
   -webkit-font-smoothing: antialiased;

@@ -129,7 +129,9 @@ export function GameView({ room, theme, timeMode, onPeriodChange, controlsRef, e
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
+      {/* Touches on the game only move the character: no page panning or zoom,
+          no text selection or long-press menu. */}
+      <div ref={containerRef} className="absolute inset-0 touch-none select-none overflow-hidden [-webkit-touch-callout:none]" />
       {!editing && <ChatBar onSend={(text) => handleRef.current?.sendChat(text) ?? false} />}
     </>
   );

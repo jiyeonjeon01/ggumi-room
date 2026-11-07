@@ -102,20 +102,25 @@ function Pages() {
 
 // ---------------------------------------------------------------- layout
 
-function Layout({ children, nav }: { children: ReactNode; nav?: ReactNode }) {
+/**
+ * Page frame. `compact` (rooms): on phones the header shrinks to one row (logo,
+ * name, account) so the game gets the height; pages with forms keep the full one.
+ */
+function Layout({ children, nav, compact = false }: { children: ReactNode; nav?: ReactNode; compact?: boolean }) {
+  const phone = (cls: string) => (compact ? cls : '');
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-gradient-to-b from-blush-50 via-cream to-lavender-100">
-      <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-2">
-        <a href="/" onClick={(e) => (e.preventDefault(), navigate('/'))} className="flex items-center gap-3">
-          <Logo />
+      <header className={`flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-8 sm:pt-6 short:pt-2 ${phone('max-sm:gap-2 max-sm:pt-3')}`}>
+        <a href="/" onClick={(e) => (e.preventDefault(), navigate('/'))} className={`flex items-center gap-3 pointer-coarse:min-h-10 ${phone('max-sm:gap-2')}`}>
+          <Logo className={phone('max-sm:h-8 max-sm:w-8')} />
           <div>
-            <h1 className="text-2xl tracking-wide text-plum-700 sm:text-3xl">
-              꾸미룸 <span className="ml-1.5 align-middle text-sm tracking-wide text-blush-400">Ggumiroom</span>
+            <h1 className={`text-2xl tracking-wide text-plum-700 sm:text-3xl ${phone('max-sm:text-xl')}`}>
+              꾸미룸 <span className={`ml-1.5 align-middle text-sm tracking-wide text-blush-400 ${phone('max-sm:hidden')}`}>Ggumiroom</span>
             </h1>
-            <p className="text-xs text-plum-500 sm:text-sm short:hidden">나만의 작은 픽셀 방에 놀러 오세요</p>
+            <p className={`text-xs text-plum-500 sm:text-sm short:hidden ${phone('max-sm:hidden')}`}>나만의 작은 픽셀 방에 놀러 오세요</p>
           </div>
         </a>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {nav}
           <AccountMenu />
         </div>
@@ -154,8 +159,10 @@ function AccountMenu() {
     }
   };
   return (
-    <div className="flex items-center gap-1 rounded-full bg-white/70 py-1 pl-3 pr-1 shadow-sm ring-1 ring-blush-200">
-      <span className="text-sm text-plum-700">{state.me.nickname}님</span>
+    <div className="flex min-w-0 items-center gap-1 rounded-full bg-white/70 py-1 pl-3 pr-1 shadow-sm ring-1 ring-blush-200">
+      <span className="min-w-0 truncate text-sm text-plum-700" title={state.me.nickname}>
+        {state.me.nickname}님
+      </span>
       <Button variant="ghost" className="px-3 py-1" onClick={onLogout}>
         로그아웃
       </Button>
@@ -848,7 +855,7 @@ function RoomScreen({
   if (panels) {
     // Theme buttons live in the left panel here, not in the header.
     return (
-      <Layout>
+      <Layout compact>
         <RoomLayout my={panels.my} friends={panels.friends} badge={panels.badge} unread={panels.unread} footer={footer} editBar={editBar} editing={editing}>
           {stage}
         </RoomLayout>
@@ -856,7 +863,7 @@ function RoomScreen({
     );
   }
   return (
-    <Layout nav={nav}>
+    <Layout nav={nav} compact>
       {stage}
       {footer}
     </Layout>
@@ -906,9 +913,9 @@ function Hint({ keys, label }: { keys: string[]; label: string }) {
 }
 
 /** Tiny iso cube logo, drawn as crisp SVG pixels. */
-function Logo() {
+function Logo({ className = '' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 16 16" className="h-10 w-10 drop-shadow-sm" shapeRendering="crispEdges" aria-hidden>
+    <svg viewBox="0 0 16 16" className={`h-10 w-10 drop-shadow-sm ${className}`} shapeRendering="crispEdges" aria-hidden>
       <path fill="#f7a8c8" d="M8 1l7 3.5v7L8 15l-7-3.5v-7z" />
       <path fill="#c9a8f0" d="M8 8l7-3.5v7L8 15z" />
       <path fill="#fff1f6" d="M8 1l7 3.5L8 8 1 4.5z" />

@@ -469,11 +469,12 @@ export class RoomScene extends Phaser.Scene {
     // browser menu and middle-click scrolling behave as usual.
     const canvas = this.game.canvas;
     const onContextMenu = (e: MouseEvent) => {
+      // A long-press on a phone opens no browser menu over the game (and,
+      // while decorating, doesn't rotate either: touch has the buttons).
+      const type = (e as PointerEvent).pointerType;
+      if (type && type !== 'mouse') return e.preventDefault();
       if (!this.editor) return;
       e.preventDefault();
-      // Touch long-press also opens a context menu; touch keeps the buttons.
-      const type = (e as PointerEvent).pointerType;
-      if (type && type !== 'mouse') return;
       this.editShortcut('rotate', e);
     };
     const onMouseDown = (e: MouseEvent) => {
