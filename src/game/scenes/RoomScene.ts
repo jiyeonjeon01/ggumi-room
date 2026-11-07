@@ -13,7 +13,8 @@ import { lookFor } from '../environment/look';
 import { RoomLighting } from '../environment/RoomLighting';
 import type { Period } from '../environment/timeOfDay';
 import { BUBBLE_MS, type ChatMessage } from '../chat/chat';
-import { SpeechBubble } from '../chat/SpeechBubble';
+import { layoutBubbles, type BubbleWant } from '../chat/bubbleLayout';
+import { BUBBLE_GAP, BUBBLE_MARGIN, BUBBLE_TAIL, BUBBLE_TAIL_INSET, SpeechBubble } from '../chat/SpeechBubble';
 import { textLayer, textScale } from '../ui/TextOverlay';
 import { WindowLight } from '../environment/WindowLight';
 import { WindowView } from '../environment/WindowView';
@@ -49,7 +50,8 @@ interface Remote {
   avatar: Avatar;
   motion: RemoteMotion;
   bubble: SpeechBubble;
-  bubbleTimer: Phaser.Time.TimerEvent | null;
+  /** Date.now() time the bubble disappears (0: none shown). */
+  bubbleUntil: number;
   nickname: string;
 }
 
@@ -117,7 +119,6 @@ export class RoomScene extends Phaser.Scene {
   private nextEnvTick = 0;
   private bubble!: SpeechBubble;
   private shownChat: ShownChat | null = null;
-  private bubbleTimer: Phaser.Time.TimerEvent | null = null;
   private initialChat?: ShownChat;
 
   private world!: CollisionWorld;
@@ -149,7 +150,6 @@ export class RoomScene extends Phaser.Scene {
     this.period = data.period;
     this.initialChat = data.chat;
     this.shownChat = null;
-    this.bubbleTimer = null;
     this.sortables = [];
     this.furniture = new Map();
     this.editor = null;
@@ -205,6 +205,7 @@ export class RoomScene extends Phaser.Scene {
       if (cell) start = nav.cellCenter(cell.c, cell.r);
     }
     this.player = new Avatar(this, start, room.owner, this.initialPlayer?.facing);
+    this.player.tag?.markSelf();
     this.sortables.push(this.player);
 
     this.marker = this.add.image(0, 0, this.createMarkerTexture()).setDepth(DEPTH.marker).setVisible(false);
@@ -224,10 +225,7 @@ export class RoomScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.fitCamera, this);
       this.events.off(Phaser.Scenes.Events.RENDER, this.syncText, this);
-      this.bubbleTimer?.remove();
-      this.bubbleTimer = null;
       this.editUnsubscribe?.();
-      for (const r of this.remotes.values()) r.bubbleTimer?.remove();
       // Name tags and bubbles live in the page, not the scene: clear them for the restart.
       textLayer(this.game).replaceChildren();
     });
@@ -256,6 +254,7 @@ export class RoomScene extends Phaser.Scene {
       r.avatar.syncView();
     }
     this.sortDepth();
+    this.expireBubbles(Date.now());
     if (this.room.camera === 'follow') this.followCamera(dt);
 
     // Window scenery: cheap check at 10 Hz, re-render only on visible change.
@@ -291,14 +290,26 @@ export class RoomScene extends Phaser.Scene {
     if (message.playerId !== this.room.owner) return;
     const remaining = expiresAt - Date.now();
     if (remaining <= 0) return;
-    this.bubbleTimer?.remove();
     this.shownChat = { message, expiresAt };
     this.bubble.show(message.content);
-    this.bubbleTimer = this.time.delayedCall(remaining, () => {
-      this.bubbleTimer = null;
+  }
+
+  /**
+   * Bubbles last BUBBLE_MS of real time. Checked every frame against the wall
+   * clock rather than the game clock, which falls behind when frames are slow
+   * (busy phones), so a bubble never lingers.
+   */
+  private expireBubbles(now: number): void {
+    if (this.shownChat && now >= this.shownChat.expiresAt) {
       this.shownChat = null;
       this.bubble.hide();
-    });
+    }
+    for (const r of this.remotes.values()) {
+      if (r.bubbleUntil && now >= r.bubbleUntil) {
+        r.bubbleUntil = 0;
+        r.bubble.hide();
+      }
+    }
   }
 
   // ---------------------------------------------------------------- other people (realtime)
@@ -319,7 +330,7 @@ export class RoomScene extends Phaser.Scene {
     const avatar = new Avatar(this, { x: m.x, y: m.y }, m.nickname, m.f);
     const bubble = new SpeechBubble(textLayer(this.game));
     if (this.editor) avatar.setVisible(false); // joined while we're decorating
-    this.remotes.set(m.id, { avatar, motion: new RemoteMotion(m, performance.now()), bubble, bubbleTimer: null, nickname: m.nickname });
+    this.remotes.set(m.id, { avatar, motion: new RemoteMotion(m, performance.now()), bubble, bubbleUntil: 0, nickname: m.nickname });
     this.sortables.push(avatar);
     this.sortDepth();
   }
@@ -332,7 +343,6 @@ export class RoomScene extends Phaser.Scene {
     const r = this.remotes.get(id);
     if (!r) return;
     this.remotes.delete(id);
-    r.bubbleTimer?.remove();
     r.bubble.destroy();
     r.avatar.destroy();
     this.sortables = this.sortables.filter((s) => s !== r.avatar);
@@ -342,13 +352,9 @@ export class RoomScene extends Phaser.Scene {
   sayRemote(id: string, content: string): void {
     const r = this.remotes.get(id);
     if (!r) return;
-    r.bubbleTimer?.remove();
     if (this.editor) return; // no bubbles while decorating (they'd float over furniture)
     r.bubble.show(content);
-    r.bubbleTimer = this.time.delayedCall(BUBBLE_MS, () => {
-      r.bubbleTimer = null;
-      r.bubble.hide();
-    });
+    r.bubbleUntil = Date.now() + BUBBLE_MS;
   }
 
   /** Where everyone else is right now (carried over a scene restart). */
@@ -412,7 +418,7 @@ export class RoomScene extends Phaser.Scene {
       windowLight: this.windowLight.state,
       depthOrder: sortByDepth(this.sortables).map((s) => (s === this.player ? 'player' : s instanceof Avatar ? 'remote' : s.image.texture.key)),
       peopleVisible: this.player.visible,
-      remotes: this.getRemotes().map((r) => ({ ...r, drawn: { ...(this.remotes.get(r.id)?.avatar.pos ?? r) }, visible: this.remotes.get(r.id)?.avatar.visible ?? false, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
+      remotes: this.getRemotes().map((r) => ({ ...r, drawn: { ...(this.remotes.get(r.id)?.avatar.pos ?? r) }, visible: this.remotes.get(r.id)?.avatar.visible ?? false, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null, bubbleBox: this.remotes.get(r.id)?.bubble.bounds ?? null })),
     };
   }
 
@@ -426,7 +432,8 @@ export class RoomScene extends Phaser.Scene {
     const b = this.bubble.bounds;
     const zoom = this.cameras.main.zoom;
     const tag = this.toCanvas(this.player.tagPoint);
-    const anchor = this.toWorld({ x: tag.x, y: tag.y - (this.player.tag?.height ?? 0) });
+    // Same point syncText aims the tail at: just above the name tag.
+    const anchor = this.toWorld({ x: tag.x, y: tag.y - (this.player.tag?.height ?? 0) - textScale(zoom) });
     const topLeft = this.toWorld(b);
     return {
       visible: this.bubble.visible,
@@ -439,6 +446,8 @@ export class RoomScene extends Phaser.Scene {
       tailX: this.toWorld({ x: b.tailX, y: 0 }).x,
       tail: b.tail,
       lines: b.lines,
+      lifted: b.lifted,
+      collapsed: b.collapsed,
       anchor,
       view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
       canvas: b,
@@ -772,12 +781,27 @@ export class RoomScene extends Phaser.Scene {
   private syncText(): void {
     const cam = this.cameras.main;
     const scale = textScale(cam.zoom);
-    for (const { avatar, bubble } of [{ avatar: this.player, bubble: this.bubble }, ...this.remotes.values()]) {
+    const speaking: { id: string; bubble: SpeechBubble; anchor: Vec2 }[] = [];
+    const people = [{ id: 'me', avatar: this.player, bubble: this.bubble }, ...[...this.remotes].map(([id, r]) => ({ id, ...r }))];
+    for (const { id, avatar, bubble } of people) {
       const at = this.toCanvas(avatar.tagPoint);
       avatar.tag?.place(at.x, at.y, scale);
       // The tail points just above the name tag.
-      if (bubble.visible) bubble.place({ x: at.x, y: at.y - (avatar.tag?.height ?? 0) - scale }, cam.width, cam.height, scale);
+      if (bubble.visible && avatar.visible) speaking.push({ id, bubble, anchor: { x: at.x, y: at.y - (avatar.tag?.height ?? 0) - scale } });
     }
+    if (!speaking.length) return;
+    // Everyone's bubbles are placed together so they don't cover each other.
+    const wants: BubbleWant[] = speaking.map(({ id, bubble, anchor }) => ({ id, anchorX: anchor.x, anchorY: anchor.y, order: bubble.order, ...bubble.size(scale) }));
+    const spots = layoutBubbles(wants, {
+      width: cam.width,
+      height: cam.height,
+      margin: BUBBLE_MARGIN * scale,
+      tail: BUBBLE_TAIL * scale,
+      gap: BUBBLE_GAP * scale,
+      tailInset: BUBBLE_TAIL_INSET * scale,
+    });
+    const dt = this.game.loop.delta;
+    for (const { id, bubble, anchor } of speaking) bubble.place(spots.get(id)!, anchor, scale, dt);
   }
 
   /** World px (screen space of the iso room) -> canvas CSS px. */

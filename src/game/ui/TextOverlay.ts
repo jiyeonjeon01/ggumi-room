@@ -19,7 +19,14 @@ import { FONT_STACK } from '../art/fonts';
 export const TEXT_SIZE = 6;
 /** Never smaller than this on screen (CSS px), so tiny zooms (phones) stay readable. */
 const MIN_TEXT_PX = 11;
+/** Name tags are a little smaller than speech, with their own floor. */
+const TAG_SIZE = 5;
+const MIN_TAG_PX = 10;
 const ATTR = 'data-game-text';
+
+/** Bumped when a font finishes loading (the app starts without waiting for it): tags measure again. */
+let fontEpoch = 0;
+if (typeof document !== 'undefined') document.fonts?.addEventListener?.('loadingdone', () => fontEpoch++);
 
 /** CSS px per world px for text: the camera zoom, but never below the readable minimum. */
 export function textScale(zoom: number): number {
@@ -59,14 +66,17 @@ export function placeAt(el: HTMLElement, x: number, y: number): void {
 }
 
 /**
- * A character's name tag: the same cream label as before, bottom-centred
- * on its point. Size is measured once per text scale.
+ * A character's name tag, bottom-centred on its point: a small rounded pill
+ * (plum, or pink for the player's own character) so it never looks like a
+ * speech bubble (cream box, pink pixel border, tail). Size is measured once
+ * per text scale.
  */
 export class NameTag {
   readonly el: HTMLDivElement;
   private scale = 0;
   private w = 0;
   private h = 0;
+  private epoch = -1;
 
   constructor(layer: HTMLElement, name: string) {
     this.el = document.createElement('div');
@@ -77,10 +87,17 @@ export class NameTag {
       left: '0',
       top: '0',
       whiteSpace: 'nowrap',
-      color: '#7a4a68',
-      background: 'rgba(255, 250, 243, 0.9)',
+      borderRadius: '999px',
+      color: '#fffaf3',
+      background: 'rgba(74, 43, 64, 0.62)',
     });
     layer.appendChild(this.el);
+  }
+
+  /** The player's own character: pink instead of plum, to find yourself at a glance. */
+  markSelf(): void {
+    this.el.dataset.self = '';
+    this.el.style.background = 'rgba(229, 112, 159, 0.88)';
   }
 
   /** On-screen height (CSS px), for the speech bubble above it. */
@@ -104,9 +121,11 @@ export class NameTag {
   /** `x`, `bottom`: canvas CSS px. */
   place(x: number, bottom: number, scale: number): void {
     if (!this.visible) return; // a hidden element has no size to measure
-    if (scale !== this.scale || !this.w) {
+    if (scale !== this.scale || !this.w || this.epoch !== fontEpoch) {
       this.scale = scale;
-      Object.assign(this.el.style, { font: textFont(scale), lineHeight: `${Math.round(TEXT_SIZE * 1.3 * scale)}px`, padding: `${scale}px ${3 * scale}px` });
+      this.epoch = fontEpoch;
+      const px = Math.max(TAG_SIZE * scale, MIN_TAG_PX);
+      Object.assign(this.el.style, { font: `${px}px ${FONT_STACK}`, lineHeight: `${Math.round(px * 1.3)}px`, padding: `0 ${Math.round(px * 0.5)}px` });
       this.w = this.el.offsetWidth;
       this.h = this.el.offsetHeight;
     }
