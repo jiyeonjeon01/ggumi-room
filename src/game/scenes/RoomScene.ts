@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
-import { FLOOR_THICKNESS, WALL_HEIGHT, WALL_THICKNESS } from '../art/roomArt';
+import { FRAME_H } from '../art/avatarArt';
 import { ensureAvatarTextures, ensureFurnitureTexture, ensureRoomTextures } from '../art/textures';
 import { THEMES, type ThemeId } from '../art/themes';
+import { centreRange, fitZoom, followAxis, followZoom, roomExtent } from '../core/camera';
 import { CollisionWorld } from '../core/collision';
 import { sortByDepth, type DepthItem } from '../core/depthSort';
 import { screenToWorld, TILE_H, TILE_W, worldToScreen, type Vec2 } from '../core/iso';
@@ -255,6 +256,7 @@ export class RoomScene extends Phaser.Scene {
       r.avatar.syncView();
     }
     this.sortDepth();
+    if (this.room.camera === 'follow') this.followCamera(dt);
 
     // Window scenery: cheap check at 10 Hz, re-render only on visible change.
     // Browsers suspend rAF for hidden tabs; the explicit check also covers
@@ -398,6 +400,11 @@ export class RoomScene extends Phaser.Scene {
       editing: this.editor !== null,
       destination: this.controller.destination,
       zoom: this.cameras.main.zoom,
+      camera: {
+        mode: this.room.camera ?? 'fit',
+        view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
+        extent: roomExtent(this.room.width, this.room.height),
+      },
       period: this.period,
       windows: this.windows.map((w) => ({ redraws: w.redraws, ...w.lastState })),
       lighting: this.lighting.state,
@@ -405,7 +412,7 @@ export class RoomScene extends Phaser.Scene {
       windowLight: this.windowLight.state,
       depthOrder: sortByDepth(this.sortables).map((s) => (s === this.player ? 'player' : s instanceof Avatar ? 'remote' : s.image.texture.key)),
       peopleVisible: this.player.visible,
-      remotes: this.getRemotes().map((r) => ({ ...r, visible: this.remotes.get(r.id)?.avatar.visible ?? false, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
+      remotes: this.getRemotes().map((r) => ({ ...r, drawn: { ...(this.remotes.get(r.id)?.avatar.pos ?? r) }, visible: this.remotes.get(r.id)?.avatar.visible ?? false, bubble: this.remotes.get(r.id)?.bubble.visible ? this.remotes.get(r.id)?.bubble.content : null })),
     };
   }
 
@@ -725,24 +732,39 @@ export class RoomScene extends Phaser.Scene {
   }
 
   /**
-   * Fixed camera that frames the whole room. Uses the largest integer zoom
-   * that fits (crisp pixels); falls back to fractional zoom on tiny screens.
+   * Personal rooms: a fixed camera that frames the whole room, at the largest
+   * integer zoom that fits (crisp pixels), fractional on tiny screens.
+   * Big rooms (party lounge): personal-room zoom, following the player.
    */
   private fitCamera(): void {
     const { width, height } = this.scale.gameSize;
-    const { room } = this;
-    const T = WALL_THICKNESS;
-    const left = -(room.height + T) * (TILE_W / 2);
-    const right = (room.width + T) * (TILE_W / 2);
-    const top = -WALL_HEIGHT - T * TILE_H - 4;
-    const bottom = (room.width + room.height) * (TILE_H / 2) + FLOOR_THICKNESS;
-    const margin = 24;
-    const fit = Math.min((width - margin * 2) / (right - left), (height - margin * 2) / (bottom - top));
-    const zoom = fit >= 1 ? Math.floor(fit) : Math.max(0.25, fit);
-
+    const { left, right, top, bottom } = roomExtent(this.room.width, this.room.height);
     const cam = this.cameras.main;
-    cam.setZoom(zoom);
+    if (this.room.camera === 'follow') {
+      cam.setZoom(followZoom(width, height));
+      this.followCamera(0);
+      return;
+    }
+    cam.setZoom(fitZoom(width, height, { left, right, top, bottom }));
     cam.centerOn(Math.round((left + right) / 2), Math.round((top + bottom) / 2));
+  }
+
+  /**
+   * Keeps the player in view without showing outside the room: still while
+   * they move inside a dead zone, then easing after them. `dt` 0 jumps there
+   * (start, window resize). Scroll lands on whole screen pixels, so sprites
+   * and the text layer line up exactly.
+   */
+  private followCamera(dt: number): void {
+    const cam = this.cameras.main;
+    const e = roomExtent(this.room.width, this.room.height);
+    const z = cam.zoom;
+    const vw = cam.width / z;
+    const vh = cam.height / z;
+    const p = this.player.sprite;
+    const cx = followAxis(cam.scrollX + cam.width / 2, p.x, vw, centreRange(e.left, e.right, vw), dt);
+    const cy = followAxis(cam.scrollY + cam.height / 2, p.y - FRAME_H / 2, vh, centreRange(e.top, e.bottom, vh), dt);
+    cam.setScroll(Math.round((cx - cam.width / 2) * z) / z, Math.round((cy - cam.height / 2) * z) / z);
   }
 
   /** Name tags and speech bubbles (page text layer) follow their characters on screen. */

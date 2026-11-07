@@ -50,6 +50,11 @@ export interface RoomData {
   windows: WindowPlacement[];
   /** Wall decorations (personal room unless a template says otherwise). */
   decor?: WallDecor;
+  /**
+   * fit (default): the whole room on screen at once (personal rooms).
+   * follow: a big room shown at personal-room size, the camera following the player.
+   */
+  camera?: 'fit' | 'follow';
 }
 
 interface TemplateJson {
@@ -72,6 +77,7 @@ export function roomFromTemplate(name: 'lounge', base: Pick<RoomData, 'id' | 'na
     spawn: { ...t.spawn },
     windows: t.windows.map((w) => ({ ...w })),
     decor: t.decor,
+    camera: 'follow',
     furniture: t.layout.map((i) => ({ id: i.type as FurniturePlacement['id'], x: i.x, y: i.y, facing: i.facing as Facing })),
   };
 }
