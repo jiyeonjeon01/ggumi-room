@@ -97,6 +97,24 @@ class PartyPreviewOut(BaseModel):
     count: int | None = None
 
 
+class ActivePartyOut(BaseModel):
+    room_id: uuid.UUID
+    name: str
+    host_nickname: str
+    is_host: bool
+    capacity: int
+    count: int
+    # I'm inside right now (another tab or device, or a seat kept after a dropped connection).
+    inside: bool
+    # Nobody inside: when it closes by itself. None while someone is inside.
+    closes_at: datetime | None = None
+
+
+class ActivePartiesOut(BaseModel):
+    now: datetime
+    parties: list[ActivePartyOut]
+
+
 class PartyJoinOut(BaseModel):
     room_id: uuid.UUID
 

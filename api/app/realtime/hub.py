@@ -439,6 +439,10 @@ class Hub:
         room = self.rooms.get(room_id)
         return len(room.people()) if room else 0
 
+    def in_party(self, room_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        room = self.rooms.get(room_id)
+        return bool(room and user_id in room.people())
+
     def occupied_parties(self) -> list[uuid.UUID]:
         return [r.id for r in self.rooms.values() if r.kind != "personal" and (r.members or r.holds)]
 

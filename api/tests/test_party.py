@@ -103,6 +103,7 @@ def test_logged_out_sees_nothing(tc):  # noqa: F811
     for method, url in (
         ("POST", "/api/parties"),
         ("GET", "/api/parties/mine"),
+        ("GET", "/api/parties/active"),
         ("GET", f"/api/parties/join/{p['token']}"),
         ("POST", f"/api/parties/join/{p['token']}"),
         ("POST", f"/api/parties/{p['room_id']}/close"),
@@ -136,6 +137,45 @@ def test_link_lets_anyone_logged_in_join_but_nothing_else(tc):  # noqa: F811
     assert stranger.req("POST", "/api/parties/join/" + "x" * 32).status_code == 404
     # A party link isn't an invite link.
     assert stranger.req("GET", f"/api/invites/{p['token']}").json()["status"] == "not_found"
+
+
+def test_active_list_finds_my_open_parties_again(tc):  # noqa: F811
+    a, b, c, d = User(tc, "꾸미", "ggumi01"), User(tc, "토리", "tori01"), User(tc, "모모", "momo01"), User(tc, "콩이", "kong01")
+    pa, pb = party(a), party(b)
+    enter(c, pa), enter(c, pb)
+    enter(c, pa)  # joining twice is still one membership
+
+    def listed(u):
+        r = u.req("GET", "/api/parties/active")
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    got = listed(c)
+    assert got["now"] and [p["room_id"] for p in got["parties"]] == [pb["room_id"], pa["room_id"]]  # last joined first
+    first_ = got["parties"][1]
+    assert first_["name"] == "꾸미님의 파티룸" and first_["host_nickname"] == "꾸미" and first_["is_host"] is False
+    assert first_["count"] == 0 and first_["capacity"] == 10 and first_["inside"] is False and first_["closes_at"]
+    mine = listed(a)["parties"]
+    assert [(p["room_id"], p["is_host"]) for p in mine] == [(pa["room_id"], True)]
+    assert listed(d)["parties"] == []  # never joined: nothing (no link, no listing)
+
+    # Inside (two tabs): one person, no countdown while someone is in.
+    with c.ws() as t1, c.ws() as t2:
+        join(t1, pa["room_id"]), join(t2, pa["room_id"])
+        row = next(p for p in listed(c)["parties"] if p["room_id"] == pa["room_id"])
+        assert row["count"] == 1 and row["inside"] is True and row["closes_at"] is None
+        assert next(p for p in listed(a)["parties"])["inside"] is False
+
+    # A dropped connection keeps its seat: still counted, still "inside".
+    row = next(p for p in listed(c)["parties"] if p["room_id"] == pa["room_id"])
+    assert row["count"] == 1 and row["inside"] is True
+
+    # Closed by the host, or empty past its closing time: gone from every list.
+    assert a.req("POST", f"/api/parties/{pa['room_id']}/close").status_code == 204
+    assert [p["room_id"] for p in listed(c)["parties"]] == [pb["room_id"]]
+    assert listed(a)["parties"] == []
+    db_set(pb["room_id"], closes_at=utcnow() - timedelta(seconds=1))
+    assert listed(c)["parties"] == [] and listed(b)["parties"] == []
 
 
 def test_party_has_a_fixed_setup(tc):  # noqa: F811

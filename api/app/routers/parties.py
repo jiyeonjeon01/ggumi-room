@@ -11,6 +11,9 @@ Policy:
   also after the host left, and closes 30 minutes after the last person left (see
   realtime/parties.py). A closed party can't be entered again.
 - Logged out, nothing about a party is shown (every route needs a session).
+- Membership lasts as long as the party: anyone who joined (or opened) one can find it
+  again in their list (GET /active) and walk back in until it closes, also from another
+  browser or after logging in again. A closed party drops out of the list.
 """
 
 import re
@@ -28,7 +31,7 @@ from ..deps import current_user
 from ..models import Room, RoomMember, User
 from ..realtime.hub import PARTY_CAPACITY, hub, notify
 from ..realtime.parties import EMPTY_CLOSE
-from ..schemas import PartyJoinOut, PartyOut, PartyPreviewOut
+from ..schemas import ActivePartiesOut, ActivePartyOut, PartyJoinOut, PartyOut, PartyPreviewOut
 from ..security import new_token
 from .rooms import my_room, party_url
 
@@ -36,6 +39,8 @@ router = APIRouter(prefix="/parties", tags=["parties"])
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32}$")  # token_urlsafe(24)
 NAME_MAX = 30
+# Open parties listed at most (one hosted, the rest joined; old ones close by themselves).
+ACTIVE_MAX = 20
 
 
 def _out(room: Room) -> PartyOut:
@@ -93,6 +98,43 @@ def mine(user: User = Depends(current_user), db: Session = Depends(get_db)) -> P
     """The party I host that's still open, if any."""
     room = _open_of(db, user)
     return _out(room) if room else None
+
+
+@router.get("/active", response_model=ActivePartiesOut)
+def active(user: User = Depends(current_user), db: Session = Depends(get_db)) -> ActivePartiesOut:
+    """Open parties I may walk back into: the one I host and the ones I joined by link.
+
+    `closes_at` only while nobody is inside (seats kept for a dropped connection count as
+    inside); `now` is the server clock, so the countdown doesn't depend on the device's clock.
+    """
+    now = utcnow()
+    rows = db.execute(
+        select(Room, User, RoomMember.role)
+        .join(RoomMember, (RoomMember.room_id == Room.id) & (RoomMember.user_id == user.id))
+        .join(User, User.id == Room.owner_id)
+        .where(Room.kind == "party", Room.closed_at.is_(None), User.status == "active")
+        .order_by((RoomMember.role == "host").desc(), RoomMember.joined_at.desc())
+        .limit(ACTIVE_MAX)
+    ).all()
+    out = []
+    for room, host, role in rows:
+        count = hub.party_count(room.id)
+        closes_at = None if count else room.closes_at
+        if closes_at is not None and closes_at <= now:
+            continue  # empty past its time: the sweep closes it within a minute
+        out.append(
+            ActivePartyOut(
+                room_id=room.id,
+                name=room.name,
+                host_nickname=host.nickname,
+                is_host=role == "host",
+                capacity=PARTY_CAPACITY,
+                count=count,
+                inside=hub.in_party(room.id, user.id),
+                closes_at=closes_at,
+            )
+        )
+    return ActivePartiesOut(now=now, parties=out)
 
 
 def _by_token(db: Session, token: str) -> tuple[Room, User] | None:

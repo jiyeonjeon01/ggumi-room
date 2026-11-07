@@ -2,12 +2,15 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLayoutMode, useStoredFlag } from '../app/layout';
 import { Modal } from './ui';
 
+/** The right panel holds friends and party rooms (see SocialPanel). */
+const SOCIAL = '친구·파티';
+
 interface Props {
   /** The game stage (section with the Phaser canvas). */
   children: ReactNode;
   /** Left panel content ("내 정보"). */
   my: (close?: () => void) => ReactNode;
-  /** Right panel content ("친구"). */
+  /** Right panel content (friends and party rooms). */
   friends: (close?: () => void) => ReactNode;
   /** Pending incoming friend requests, shown as a badge. */
   badge: number;
@@ -57,7 +60,7 @@ export function RoomLayout({ children, my, friends, badge, unread = 0, footer, e
             {my()}
           </SidePanel>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-          <SidePanel side="right" title="친구" icon="👥" width="w-[300px]" badge={badge} unread={unread} collapsed={rightCollapsed} onToggle={() => setRightCollapsed(!rightCollapsed)}>
+          <SidePanel side="right" title={SOCIAL} icon="👥" width="w-[300px]" badge={badge} unread={unread} collapsed={rightCollapsed} onToggle={() => setRightCollapsed(!rightCollapsed)}>
             {friends()}
           </SidePanel>
         </div>
@@ -78,7 +81,7 @@ export function RoomLayout({ children, my, friends, badge, unread = 0, footer, e
         </div>
         {editBar ?? footer}
         {open && (
-          <Drawer side={open === 'my' ? 'left' : 'right'} title={open === 'my' ? '내 정보' : '친구'} onClose={close}>
+          <Drawer side={open === 'my' ? 'left' : 'right'} title={open === 'my' ? '내 정보' : SOCIAL} onClose={close}>
             {open === 'my' ? my(close) : friends(close)}
           </Drawer>
         )}
@@ -92,10 +95,10 @@ export function RoomLayout({ children, my, friends, badge, unread = 0, footer, e
       {editBar}
       <nav hidden={!!editBar} aria-label="메뉴" className="grid shrink-0 grid-cols-2 gap-1 rounded-full bg-white/70 p-1 shadow-sm ring-1 ring-blush-200">
         <TabButton icon="👤" label="내 정보" expanded={open === 'my'} onClick={() => setOpen('my')} />
-        <TabButton icon="👥" label="친구" badge={badge} unread={unread} expanded={open === 'friends'} onClick={() => setOpen('friends')} />
+        <TabButton icon="👥" label={SOCIAL} badge={badge} unread={unread} expanded={open === 'friends'} onClick={() => setOpen('friends')} />
       </nav>
       {open && (
-        <Modal title={open === 'my' ? '내 정보' : '친구'} onClose={close}>
+        <Modal title={open === 'my' ? '내 정보' : SOCIAL} onClose={close}>
           {open === 'my' ? my(close) : friends(close)}
         </Modal>
       )}

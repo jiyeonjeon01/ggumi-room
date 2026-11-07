@@ -82,7 +82,7 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
                 onClick={() => (onNavigate?.(), chat.openChat({ id: f.id, nickname: f.nickname }))}
                 aria-label={`${f.nickname}님과 채팅${chat.unread[f.id] ? `, 읽지 않은 메시지 ${chat.unread[f.id]}개` : ''}`}
                 title="채팅"
-                className="relative rounded-full px-2 py-1 text-base hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10"
+                className="relative rounded-full px-1.5 py-0.5 text-base hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10"
               >
                 <span aria-hidden>💬</span>
                 {!!chat.unread[f.id] && (
@@ -92,13 +92,13 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
                 )}
               </button>
               {f.room_id && (
-                <Button className="px-3 py-1" onClick={() => (onNavigate?.(), navigate(`/room/${f.room_id}`))}>
+                <Button className="px-2.5 py-1 text-xs" onClick={() => (onNavigate?.(), navigate(`/room/${f.room_id}`))}>
                   놀러 가기
                 </Button>
               )}
               <Button
                 variant="ghost"
-                className="px-2 py-1 text-xs"
+                className="px-1.5 py-1 text-xs"
                 disabled={busy === f.id}
                 onClick={() => window.confirm(`${f.nickname}님을 친구에서 삭제할까요?`) && act(f.id, () => api('DELETE', `/api/friends/${f.id}`), '친구를 삭제했어요.')}
               >
@@ -200,15 +200,17 @@ function Row({ nickname, sub, status, children }: { nickname: string; sub: strin
   return (
     // Name keeps at least ~7 characters of room; when the buttons don't fit next to it they move
     // to a second line instead of squeezing the name into one syllable per line.
-    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-white px-3 py-2 ring-1 ring-blush-100">
-      <span aria-hidden className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-lavender-100 text-sm text-plum-700">
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-2xl bg-white px-2.5 py-1.5 ring-1 ring-blush-100">
+      <span aria-hidden className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-lavender-100 text-sm text-plum-700">
         {Array.from(nickname)[0]}
         {status !== undefined && (
           <span className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-white ${p ? p.dot : 'border-2 border-gray-300 bg-white'}`} />
         )}
       </span>
-      <span className="min-w-[7.5rem] flex-1">
-        <span className="block truncate text-plum-700">{nickname}</span>
+      <span className="min-w-[7.5rem] flex-1 leading-tight">
+        <span className="block truncate text-sm text-plum-700" title={nickname}>
+          {nickname}
+        </span>
         <span className="block truncate text-xs text-plum-500">
           {status !== undefined && (
             <span data-presence={status ?? 'unknown'} className={status === 'online' ? 'text-emerald-600' : status === 'away' ? 'text-amber-600' : undefined}>

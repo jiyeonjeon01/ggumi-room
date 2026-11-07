@@ -11,12 +11,12 @@ import { FriendsProvider, useFriends } from './app/friends';
 import { ChatWindow } from './components/ChatWindow';
 import { FriendOfferModal } from './components/FriendOfferModal';
 import { GuestbookModal } from './components/GuestbookModal';
-import { FriendsPanel } from './components/FriendsPanel';
 import { GameView, type GameControls } from './components/GameView';
 import { MyPanel } from './components/MyPanel';
 import { PartyPanel } from './components/PartyPanel';
 import { EditBar, EditorPanel, useEditorKeys } from './components/RoomEditor';
 import { RoomLayout } from './components/RoomLayout';
+import { SocialPanel } from './components/SocialPanel';
 import { Button, Card, Modal, ToastProvider, useToast } from './components/ui';
 import { THEME_IDS, THEMES, type ThemeId } from './game/art/themes';
 import { isWebGLAvailable, type MoveState } from './game/createGame';
@@ -499,7 +499,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
               />
             )
           ),
-        friends: (close) => <FriendsPanel onNavigate={close} />,
+        friends: (close) => <SocialPanel onNavigate={close} />,
       }}
       banner={
           live.state === 'replaced' ? (
@@ -671,7 +671,7 @@ function PartyRoomScreen({ info }: { info: RoomInfo }) {
                 onNavigate={close}
               />
             ),
-          friends: (close) => <FriendsPanel onNavigate={close} />,
+          friends: (close) => <SocialPanel onNavigate={close} />,
         }}
         banner={
           overlay ? undefined : live.state === 'replaced' ? (

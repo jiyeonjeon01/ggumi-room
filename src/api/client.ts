@@ -118,6 +118,26 @@ export interface PartyInfo {
   count: number;
 }
 
+/** An open party I host or joined by link (GET /api/parties/active). */
+export interface ActiveParty {
+  room_id: string;
+  name: string;
+  host_nickname: string;
+  is_host: boolean;
+  capacity: number;
+  count: number;
+  /** I'm inside right now (another tab or device, or a seat kept after a dropped connection). */
+  inside: boolean;
+  /** Nobody inside: when it closes by itself (server time). Null while someone is inside. */
+  closes_at: string | null;
+}
+
+export interface ActiveParties {
+  /** Server time, to count down without trusting the device clock. */
+  now: string;
+  parties: ActiveParty[];
+}
+
 export interface PartyPreview {
   status: 'open' | 'closed' | 'not_found';
   room_id: string | null;
