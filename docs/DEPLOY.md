@@ -12,7 +12,7 @@
 | 인증서 | Let's Encrypt(Cloudflare 발급), `ggumiroom.com` + `*.ggumiroom.com`, TLS 1.3 |
 | 터널 | `ggumiroom-home`, 연결 4개(서울 icn), 경로 `ggumiroom.com`·`www.ggumiroom.com` → `http://web:8080`, 그 외 404 |
 | 캐시 | `/assets/`, `/fonts/`는 Cloudflare 캐시 HIT, HTML은 매번 새로 받음 |
-| API·DB | 2026-11-06 운영 반영 (테스트 기간). web·api·db·cloudflared 4개 컨테이너, 마이그레이션 `7b1d3e5f9a20`, `SIGNUP_CODE`로 가입 제한 중 |
+| API·DB | 2026-11-06 운영 반영, 2026-11-07 18:53부터 공개 가입. web·api·db·cloudflared 4개 컨테이너, 마이그레이션 `787ac0e56d2e` |
 | 되돌릴 이미지 | `ggumiroom-web:rollback-20261106` (API 반영 전 정적 사이트), `ggumiroom-web:rollback-20261106-1035`·`ggumiroom-api:rollback-20261106-1035` (가구 15종 반영 직전) |
 | 최근 반영 | 2026-11-06 10:34 가구 15종·마우스 조작·패널 고정·Esc 키 수정. web·api만 교체(약 6초), 마이그레이션 없음 |
 | 실시간 반영 | 2026-11-06 12:41 실시간 방·친구 접속 상태·1:1 채팅. web·api만 교체(약 6초), 마이그레이션 `ca9664530522`(새 테이블만) 적용, 기존 사용자·친구·방·가구·세션 그대로. 되돌릴 이미지 `ggumiroom-web:rollback-20261106-1240`·`ggumiroom-api:rollback-20261106-1240` |
@@ -20,6 +20,7 @@
 | 모바일 채팅·4방향 반영 | 2026-11-06 15:52 모바일 말풍선 채팅 수정, 모바일 화면 개선, 가구 15종 4방향 회전. web·api만 교체(약 7초), 마이그레이션 없음(`9ef42a96338f` 유지). 백업 `prod-20261106-1551-pre-rotate.dump` 복원 지문 동일, 반영 전후 데이터 지문 동일. 되돌릴 이미지 `ggumiroom-web:rollback-20261106-1551`·`ggumiroom-api:rollback-20261106-1551`. 되돌린 뒤에는 새로 돌린 12종의 방향 2·3이 방향 0으로 보이고 그 방을 저장하면 0으로 바뀜 |
 | 패널·글자·카메라 반영 | 2026-11-07 14:21 오른쪽 친구·파티룸 패널(다시 들어갈 파티룸 목록 `GET /api/parties/active`), 이름표·말풍선 글자 HTML 층(고밀도 화면 선명), 파티 라운지 추적 카메라. web·api만 교체(약 7초), 마이그레이션 없음(`9ef42a96338f` 유지). 백업 `prod-20261107-1411-pre-camera.dump` 복원 지문 동일, 반영 전후 데이터 지문 동일. 계정 없는 운영 점검 14/14, 휴대폰 32/32, wss 정상, 가입 코드 제한 유지. 되돌릴 이미지 `ggumiroom-web:rollback-20261107-1411`·`ggumiroom-api:rollback-20261107-1411`(DB 변경이 없어 이미지만 되돌리면 됨) |
 | 모바일·말풍선 반영 | 2026-11-07 15:09 휴대폰 사용성(게임 터치 제스처, 한 줄 헤더, 키보드 위 시트, 글꼴 대기 제거, 한글 단어 단위 줄바꿈), 말풍선 겹침 없는 배치·실제 시간 5초, 이름표 알약 디자인. **web만 교체**(약 9초, 서버 코드 변경 없음), 마이그레이션 없음(`9ef42a96338f`). 백업 `prod-20261107-1509-pre-mobile.dump` 복원 지문 동일, 반영 전후 데이터 지문 동일. 계정 없는 점검 14/14, 휴대폰 32/32, wss 정상. **가입 코드 제한 유지**(공개 가입은 `feat/open-signup` 브랜치에만 있음. 개인정보처리방침·회원 탈퇴·만 14세 미만 정책·신고·차단을 갖춘 뒤 합칠 것). 되돌릴 이미지 `ggumiroom-web:rollback-20261107-1509` |
+| 공개 가입 반영 | 2026-11-07 18:53 가입 코드 제거(공개 가입), 개인정보처리방침 `/privacy`, 만 14세 이상·방침 동의, 회원 탈퇴, 차단·신고. web·api 교체(약 7초). 마이그레이션 `787ac0e56d2e`(추가만: `users.terms_agreed_at`, `user_blocks`, `reports`)를 복원한 사본에서 upgrade·downgrade·upgrade 리허설 후 적용. 백업 `prod-20261107-1853-pre-signup.dump` 복원 지문 동일, 반영 전후 기존 데이터 지문 동일. 운영에서 코드 없이 가입→내 방→새로고침 후 로그인 유지→회원 탈퇴까지 확인(확인용 계정은 탈퇴로 삭제, 사용자 수 원래대로). wss 정상. 되돌릴 이미지 `ggumiroom-web:rollback-20261107-1853`·`ggumiroom-api:rollback-20261107-1853` — 이미지만 되돌려도 새 열·테이블은 예전 코드가 쓰지 않아 동작함(완전히 되돌리려면 `alembic downgrade 9ef42a96338f`) |
 | WebSocket | `wss://www.ggumiroom.com/ws/live` Cloudflare 경유 101 확인, 세션 없음·위조는 4401, 다른 Origin은 403 |
 | 백업 | `%USERPROFILE%\ggumiroom-backups\` (저장소 밖), 복원 확인함 |
 
