@@ -9,6 +9,7 @@ import type { Period } from './environment/timeOfDay';
 import type { RoomData } from './room/roomData';
 import { ROOM_SCENE, RoomScene, type RemoteMember, type RoomSceneData } from './scenes/RoomScene';
 import type { MoveState } from './net/motion';
+import { removeTextLayer } from './ui/TextOverlay';
 
 export type { RemoteMember } from './scenes/RoomScene';
 export type { MoveState } from './net/motion';
@@ -256,6 +257,7 @@ export function createGame(
       if (import.meta.env.DEV) delete (window as unknown as { __ggumiroom?: unknown }).__ggumiroom;
       clock.destroy();
       chat.destroy();
+      removeTextLayer(game);
       game.destroy(true);
     },
   };

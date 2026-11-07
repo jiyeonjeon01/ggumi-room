@@ -13,6 +13,7 @@ import { RoomLighting } from '../environment/RoomLighting';
 import type { Period } from '../environment/timeOfDay';
 import { BUBBLE_MS, type ChatMessage } from '../chat/chat';
 import { SpeechBubble } from '../chat/SpeechBubble';
+import { textLayer, textScale } from '../ui/TextOverlay';
 import { WindowLight } from '../environment/WindowLight';
 import { WindowView } from '../environment/WindowView';
 import type { EditItem, LayoutEditor } from '../core/layoutEditor';
@@ -210,23 +211,24 @@ export class RoomScene extends Phaser.Scene {
     this.tweens.add({ targets: this.marker, alpha: 0.35, yoyo: true, repeat: -1, duration: 450 });
     this.controller = new AvatarController(this.player, world, nav, (dest) => this.showMarker(dest));
 
-    this.bubble = new SpeechBubble(this);
+    this.bubble = new SpeechBubble(textLayer(this.game));
     if (this.initialChat) this.showChat(this.initialChat.message, this.initialChat.expiresAt);
     for (const m of this.initialRemotes) this.addRemote(m);
 
     this.setupInput();
     this.fitCamera();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.fitCamera, this);
+    // After the camera has moved for this frame, so text never trails the characters.
+    this.events.on(Phaser.Scenes.Events.RENDER, this.syncText, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.fitCamera, this);
+      this.events.off(Phaser.Scenes.Events.RENDER, this.syncText, this);
       this.bubbleTimer?.remove();
       this.bubbleTimer = null;
-      this.bubble.destroy();
       this.editUnsubscribe?.();
-      for (const r of this.remotes.values()) {
-        r.bubbleTimer?.remove();
-        r.bubble.destroy();
-      }
+      for (const r of this.remotes.values()) r.bubbleTimer?.remove();
+      // Name tags and bubbles live in the page, not the scene: clear them for the restart.
+      textLayer(this.game).replaceChildren();
     });
     this.sortDepth();
   }
@@ -253,9 +255,6 @@ export class RoomScene extends Phaser.Scene {
       r.avatar.syncView();
     }
     this.sortDepth();
-    const view = this.cameras.main.worldView;
-    this.bubble.place(this.player.bubbleAnchor, view);
-    for (const r of this.remotes.values()) if (r.bubble.visible) r.bubble.place(r.avatar.bubbleAnchor, view);
 
     // Window scenery: cheap check at 10 Hz, re-render only on visible change.
     // Browsers suspend rAF for hidden tabs; the explicit check also covers
@@ -293,7 +292,6 @@ export class RoomScene extends Phaser.Scene {
     this.bubbleTimer?.remove();
     this.shownChat = { message, expiresAt };
     this.bubble.show(message.content);
-    this.bubble.place(this.player.bubbleAnchor, this.cameras.main.worldView);
     this.bubbleTimer = this.time.delayedCall(remaining, () => {
       this.bubbleTimer = null;
       this.shownChat = null;
@@ -317,9 +315,7 @@ export class RoomScene extends Phaser.Scene {
   addRemote(m: RemoteMember): void {
     if (this.remotes.has(m.id)) return this.moveRemote(m.id, m);
     const avatar = new Avatar(this, { x: m.x, y: m.y }, m.nickname, m.f);
-    avatar.setZoom(this.cameras.main.zoom);
-    const bubble = new SpeechBubble(this);
-    bubble.setZoom(this.cameras.main.zoom);
+    const bubble = new SpeechBubble(textLayer(this.game));
     if (this.editor) avatar.setVisible(false); // joined while we're decorating
     this.remotes.set(m.id, { avatar, motion: new RemoteMotion(m, performance.now()), bubble, bubbleTimer: null, nickname: m.nickname });
     this.sortables.push(avatar);
@@ -347,7 +343,6 @@ export class RoomScene extends Phaser.Scene {
     r.bubbleTimer?.remove();
     if (this.editor) return; // no bubbles while decorating (they'd float over furniture)
     r.bubble.show(content);
-    r.bubble.place(r.avatar.bubbleAnchor, this.cameras.main.worldView);
     r.bubbleTimer = this.time.delayedCall(BUBBLE_MS, () => {
       r.bubbleTimer = null;
       r.bubble.hide();
@@ -406,14 +401,7 @@ export class RoomScene extends Phaser.Scene {
       period: this.period,
       windows: this.windows.map((w) => ({ redraws: w.redraws, ...w.lastState })),
       lighting: this.lighting.state,
-      bubble: {
-        visible: this.bubble.visible,
-        content: this.bubble.content,
-        expiresAt: this.shownChat?.expiresAt ?? null,
-        ...this.bubble.bounds,
-        anchor: this.player.bubbleAnchor,
-        view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
-      },
+      bubble: this.debugBubble(),
       windowLight: this.windowLight.state,
       depthOrder: sortByDepth(this.sortables).map((s) => (s === this.player ? 'player' : s instanceof Avatar ? 'remote' : s.image.texture.key)),
       peopleVisible: this.player.visible,
@@ -421,13 +409,33 @@ export class RoomScene extends Phaser.Scene {
     };
   }
 
-  /** Dev/test hook: world point -> position in the canvas element (CSS px). */
+  /** Dev/test hook: room point (tiles) -> position in the canvas element (CSS px). */
   debugWorldToCanvas(p: Vec2): Vec2 {
-    const s = worldToScreen(p.x, p.y);
-    const cam = this.cameras.main;
-    const hw = cam.width / 2;
-    const hh = cam.height / 2;
-    return { x: (s.x - cam.scrollX - hw) * cam.zoom + hw, y: (s.y - cam.scrollY - hh) * cam.zoom + hh };
+    return this.toCanvas(worldToScreen(p.x, p.y));
+  }
+
+  /** The local bubble in world px (as before it moved to the text layer) and in canvas px. */
+  private debugBubble() {
+    const b = this.bubble.bounds;
+    const zoom = this.cameras.main.zoom;
+    const tag = this.toCanvas(this.player.tagPoint);
+    const anchor = this.toWorld({ x: tag.x, y: tag.y - (this.player.tag?.height ?? 0) });
+    const topLeft = this.toWorld(b);
+    return {
+      visible: this.bubble.visible,
+      content: this.bubble.content,
+      expiresAt: this.shownChat?.expiresAt ?? null,
+      x: topLeft.x,
+      y: topLeft.y,
+      width: b.width / zoom,
+      height: b.height / zoom,
+      tailX: this.toWorld({ x: b.tailX, y: 0 }).x,
+      tail: b.tail,
+      lines: b.lines,
+      anchor,
+      view: (({ x, y, width, height }) => ({ x, y, width, height }))(this.cameras.main.worldView),
+      canvas: b,
+    };
   }
 
   private setupInput(): void {
@@ -735,11 +743,33 @@ export class RoomScene extends Phaser.Scene {
     const cam = this.cameras.main;
     cam.setZoom(zoom);
     cam.centerOn(Math.round((left + right) / 2), Math.round((top + bottom) / 2));
-    this.player.setZoom(zoom);
-    this.bubble.setZoom(zoom);
-    for (const r of this.remotes.values()) {
-      r.avatar.setZoom(zoom);
-      r.bubble.setZoom(zoom);
+  }
+
+  /** Name tags and speech bubbles (page text layer) follow their characters on screen. */
+  private syncText(): void {
+    const cam = this.cameras.main;
+    const scale = textScale(cam.zoom);
+    for (const { avatar, bubble } of [{ avatar: this.player, bubble: this.bubble }, ...this.remotes.values()]) {
+      const at = this.toCanvas(avatar.tagPoint);
+      avatar.tag?.place(at.x, at.y, scale);
+      // The tail points just above the name tag.
+      if (bubble.visible) bubble.place({ x: at.x, y: at.y - (avatar.tag?.height ?? 0) - scale }, cam.width, cam.height, scale);
     }
+  }
+
+  /** World px (screen space of the iso room) -> canvas CSS px. */
+  private toCanvas(p: Vec2): Vec2 {
+    const cam = this.cameras.main;
+    const hw = cam.width / 2;
+    const hh = cam.height / 2;
+    return { x: (p.x - cam.scrollX - hw) * cam.zoom + hw, y: (p.y - cam.scrollY - hh) * cam.zoom + hh };
+  }
+
+  /** Canvas CSS px -> world px. */
+  private toWorld(p: Vec2): Vec2 {
+    const cam = this.cameras.main;
+    const hw = cam.width / 2;
+    const hh = cam.height / 2;
+    return { x: (p.x - hw) / cam.zoom + hw + cam.scrollX, y: (p.y - hh) / cam.zoom + hh + cam.scrollY };
   }
 }

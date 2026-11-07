@@ -1,10 +1,10 @@
 import Phaser from 'phaser';
 import { ANCHOR_X, ANCHOR_Y, FRAME_H, FRAME_W } from '../art/avatarArt';
-import { FONT_STACK } from '../art/fonts';
 import { AVATAR_TEXTURE, SHADOW_TEXTURE } from '../art/textures';
 import type { Rect } from '../core/collision';
 import type { DepthItem } from '../core/depthSort';
 import { worldDirToScreen, worldToScreen, type Vec2 } from '../core/iso';
+import { NameTag, textLayer } from '../ui/TextOverlay';
 
 /** Four iso facings: front/back x left/right (as seen on screen). */
 export type Facing = 'front-right' | 'front-left' | 'back-right' | 'back-left';
@@ -25,7 +25,8 @@ export class Avatar implements DepthItem {
 
   readonly sprite: Phaser.GameObjects.Sprite;
   private readonly shadow: Phaser.GameObjects.Image;
-  private readonly label: Phaser.GameObjects.Text | null;
+  /** Name tag in the page's text layer (sharp on any screen), placed by the scene each frame. */
+  readonly tag: NameTag | null;
   private playingKey = '';
 
   constructor(scene: Phaser.Scene, pos: Vec2, name?: string, facing: Facing = 'front-right') {
@@ -34,7 +35,7 @@ export class Avatar implements DepthItem {
     ensureAvatarAnimations(scene);
     this.shadow = scene.add.image(0, 0, SHADOW_TEXTURE).setDepth(-1000);
     this.sprite = scene.add.sprite(0, 0, AVATAR_TEXTURE, 'front-idle').setOrigin(ANCHOR_X / FRAME_W, ANCHOR_Y / FRAME_H);
-    this.label = name ? createNameLabel(scene, name) : null;
+    this.tag = name ? new NameTag(textLayer(scene.game), name) : null;
     this.syncView();
   }
 
@@ -65,10 +66,9 @@ export class Avatar implements DepthItem {
     this.syncView();
   }
 
-  /** World px point just above the name tag, where a speech bubble's tail points. */
-  get bubbleAnchor(): Vec2 {
-    const top = this.label ? this.label.y - this.label.displayHeight : this.sprite.y - FRAME_H;
-    return { x: this.sprite.x, y: top - 1 };
+  /** World px point the name tag stands on (bottom centre). */
+  get tagPoint(): Vec2 {
+    return { x: this.sprite.x, y: this.sprite.y - FRAME_H - 2 };
   }
 
   setPosition(pos: Vec2): void {
@@ -83,7 +83,6 @@ export class Avatar implements DepthItem {
     const y = Math.round(s.y);
     this.sprite.setPosition(x, y);
     this.shadow.setPosition(x, y);
-    this.label?.setPosition(x, y - FRAME_H - 2);
 
     const view = this.facing.startsWith('front') ? 'front' : 'back';
     this.sprite.setFlipX(this.facing.endsWith('left'));
@@ -102,25 +101,18 @@ export class Avatar implements DepthItem {
   setVisible(visible: boolean): void {
     this.sprite.setVisible(visible);
     this.shadow.setVisible(visible);
-    this.label?.setVisible(visible);
-  }
-
-  /** Re-rasterizes the name tag for the current camera zoom. */
-  setZoom(zoom: number): void {
-    if (!this.label) return;
-    this.label.setResolution(Math.max(1, zoom * window.devicePixelRatio));
-    this.label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.tag?.setVisible(visible);
   }
 
   setDepth(depth: number): void {
     this.sprite.setDepth(depth);
-    this.label?.setDepth(10000 + depth);
+    this.tag?.setOrder(depth);
   }
 
   destroy(): void {
     this.sprite.destroy();
     this.shadow.destroy();
-    this.label?.destroy();
+    this.tag?.destroy();
   }
 }
 
@@ -149,21 +141,4 @@ function ensureAvatarAnimations(scene: Phaser.Scene): void {
     frameRate: 9,
     repeat: -1,
   });
-}
-
-/**
- * Name tag. Text is rasterized at the camera zoom with linear filtering so it
- * stays sharp, unlike the pixel art which uses nearest-neighbour scaling.
- */
-function createNameLabel(scene: Phaser.Scene, name: string): Phaser.GameObjects.Text {
-  const text = scene.add
-    .text(0, 0, name, {
-      fontFamily: FONT_STACK,
-      fontSize: '6px',
-      color: '#7a4a68',
-      backgroundColor: '#fffaf3e6',
-      padding: { x: 3, y: 1 },
-    })
-    .setOrigin(0.5, 1);
-  return text;
 }
