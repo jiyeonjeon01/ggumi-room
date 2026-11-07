@@ -85,9 +85,8 @@ export function LoginPage({ next }: { next: string }) {
 }
 
 export function SignupPage({ next }: { next: string }) {
-  const { signup, signupCodeRequired } = useAuth();
-  const codeRequired = signupCodeRequired === true;
-  const [form, setForm] = useState({ nickname: '', login_id: '', password: '', password_confirm: '', signup_code: '' });
+  const { signup } = useAuth();
+  const [form, setForm] = useState({ nickname: '', login_id: '', password: '', password_confirm: '', website: '' });
 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [serverErr, setServerErr] = useState<{ field?: string; message: string } | null>(null);
@@ -106,7 +105,6 @@ export function SignupPage({ next }: { next: string }) {
     login_id: loginIdError(form.login_id),
     password: passwordError(form.password, form.login_id),
     password_confirm: form.password_confirm === form.password ? null : '비밀번호가 서로 달라요.',
-    signup_code: codeRequired && !form.signup_code.trim() ? '가입 코드를 적어 주세요.' : null,
   };
   const shown = (k: keyof typeof errs) =>
     (serverErr?.field === k ? serverErr.message : null) ?? (touched[k] ? errs[k] : null);
@@ -125,7 +123,7 @@ export function SignupPage({ next }: { next: string }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setTouched({ nickname: true, login_id: true, password: true, password_confirm: true, signup_code: true });
+    setTouched({ nickname: true, login_id: true, password: true, password_confirm: true });
     if (Object.values(errs).some(Boolean)) return;
     setBusy(true);
     setServerErr(null);
@@ -167,9 +165,8 @@ export function SignupPage({ next }: { next: string }) {
           />
           <Field label="비밀번호" name="new-password" type="password" autoComplete="new-password" maxLength={128} value={form.password} onChange={set('password')} onBlur={blur('password')} error={shown('password')} hint="8자 이상, 흔한 비밀번호는 쓸 수 없어요" />
           <Field label="비밀번호 확인" name="new-password-confirm" type="password" autoComplete="new-password" maxLength={128} value={form.password_confirm} onChange={set('password_confirm')} onBlur={blur('password_confirm')} error={shown('password_confirm')} />
-          {codeRequired && (
-            <Field label="가입 코드" name="signup-code" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={128} value={form.signup_code} onChange={set('signup_code')} onBlur={blur('signup_code')} error={shown('signup_code')} hint="지금은 테스트 참가자만 가입할 수 있어요" />
-          )}
+          {/* Not for people: off screen, skipped by Tab and screen readers. Scripts that fill every field get no account. */}
+          <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={form.website} onChange={set('website')} className="absolute -left-[9999px] h-px w-px opacity-0" />
           <p className="pb-3 text-xs leading-relaxed text-plum-500">
             🔑 꾸미룸은 이메일·전화번호를 받지 않아요. 그래서 <b className="font-normal text-blush-500">비밀번호를 잊으면 되찾기 어려워요</b>. 비밀번호 관리자에 저장해 두세요.
           </p>

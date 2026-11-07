@@ -209,16 +209,14 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
 # 끄기: 같은 명령에서 up -d --build 대신 down (데이터 유지) / down -v (데이터 삭제)
 ```
 
-### 테스트 기간 가입 제한 (`SIGNUP_CODE`)
+### 공개 가입 (가입 코드 없음)
 
-`.env`에 `SIGNUP_CODE`를 넣으면 가입할 때 그 코드를 적어야 합니다 (테스트 참가자에게만 따로 알려 줌).
+가입 코드는 없어졌습니다. 닉네임·아이디·비밀번호·비밀번호 확인 네 가지로 누구나 가입하고, 비로그인 화면에 **회원가입** 버튼이 보입니다. 초대·파티룸 링크로 들어와도 같은 화면으로 가입합니다.
 
-- 서버가 확인하므로 화면을 건너뛰고 API를 직접 불러도 코드가 없으면 거절됩니다 (422, 가입 요청은 IP당 시간당 10회 제한).
-- 로그인·기존 계정에는 영향이 없습니다.
-- 코드가 켜져 있는 동안 화면에서 가입을 홍보하지 않습니다: 상단 **회원가입** 버튼과 "가입하면 …" 안내가 숨겨지고, 로그인 버튼만 보입니다. 가입 화면(`/signup`)은 로그인 화면의 링크나 초대 링크로만 들어갑니다.
+- 남은 `.env`의 `SIGNUP_CODE` 값은 더 이상 읽지 않습니다(지워도 됨). 로그인·기존 계정·세션은 그대로입니다.
+- 대량 가입 방어(서버, 메모리 카운터라 API 1개 프로세스 전제): IP당 시간당 10회·하루 20회, 전체 시간당 60회(초과 시 429). 사람에게 보이지 않는 입력칸(`website`)을 채운 요청은 계정을 만들지 않습니다. 닉네임 금칙어·아이디 형식·흔한 비밀번호 거절, CSRF·Origin 검사는 그대로입니다.
 - `robots.txt`가 `/login`, `/signup`, `/invite/`, `/room/`, `/api/`의 검색 노출을 막습니다.
-- 정식 공개 때: `.env`에서 `SIGNUP_CODE`를 지우고 `docker compose --profile tunnel up -d api`.
-- 코드 바꾸기: `.env` 수정 후 같은 명령. 값은 채팅·Git에 올리지 않습니다.
+- **공개 전에 갖출 것**: 개인정보처리방침(수집 항목: 아이디·닉네임·비밀번호 해시·채팅·방명록·접속 기록), 회원 탈퇴(계정·방·메시지 삭제), 만 14세 미만 가입 정책(법정대리인 동의 또는 가입 제한 안내), 신고·차단(1:1 채팅·방명록·파티룸). 운영자가 계정을 정지하는 방법은 지금 DB의 `users.status = 'disabled'`뿐입니다.
 
 ### 운영 반영 절차
 
@@ -228,7 +226,7 @@ docker compose -p ggumiroom-staging -f docker-compose.yml -f docker-compose.stag
    docker tag ggumiroom-web:latest ggumiroom-web:rollback-YYYYMMDD   # 빌드가 latest를 덮어쓰기 전에
    ```
 2. DB가 이미 있으면 백업합니다 (아래 "DB 백업·복원"). 처음 반영할 때는 DB가 없으므로 백업할 데이터가 없습니다.
-3. `.env`에 `POSTGRES_PASSWORD`(긴 무작위 값), 필요하면 `SIGNUP_CODE`를 넣습니다. `API_PORT=9201` 확인.
+3. `.env`에 `POSTGRES_PASSWORD`(긴 무작위 값)를 넣습니다. `API_PORT=9201` 확인.
 4. `docker compose --profile tunnel up -d --build`
    - web 컨테이너가 새 이미지로 바뀌는 몇 초 동안 사이트가 잠깐 끊길 수 있습니다.
    - api가 시작할 때 `alembic upgrade head`로 마이그레이션을 적용합니다 (`api/Dockerfile`의 CMD).

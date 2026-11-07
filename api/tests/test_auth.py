@@ -1,5 +1,6 @@
 from sqlalchemy import select, text
 
+from app import ratelimit
 from app.db import SessionLocal
 from app.models import Room, User, UserSession
 from tests.conftest import Api
@@ -155,23 +156,38 @@ def test_openapi_under_api_prefix(api):
     assert "/api/auth/signup" in spec["paths"] and "/api/invites/{token}" in spec["paths"]
 
 
-def test_signup_code_gates_new_accounts_but_not_login(api, monkeypatch):
-    from app.config import get_settings
-
-    assert api.signup(login_id="early01").status_code == 201  # account made before the gate
-    monkeypatch.setattr(get_settings(), "signup_code", "tester-pass-77")
-    assert api.get("/api/auth/signup-config").json() == {"code_required": True}
-
+def test_open_signup_needs_no_code_and_keeps_logins(api):
+    """Sign-up is open: the four fields are enough; an old client's sign-up code is ignored."""
+    assert api.signup(login_id="early01").status_code == 201
     guest = Api()
     body = {"nickname": "테스터", "login_id": "tester01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026"}
-    for code in (None, "", "wrong-code"):
-        r = guest.post("/api/auth/signup", json=body | ({} if code is None else {"signup_code": code}))
-        assert r.status_code == 422 and r.json()["detail"]["field"] == "signup_code"
-    assert guest.post("/api/auth/signup", json=body | {"signup_code": " tester-pass-77 "}).status_code == 201
-
+    assert guest.post("/api/auth/signup", json=body | {"signup_code": "anything"}).status_code == 201
+    assert guest.get("/api/auth/signup-config").status_code == 404  # the code switch is gone
     # Existing accounts still log in.
     other = Api()
     assert other.post("/api/auth/login", json={"login_id": "early01", "password": "cozy-room-2026"}).status_code == 200
 
-    monkeypatch.setattr(get_settings(), "signup_code", "")
-    assert api.get("/api/auth/signup-config").json() == {"code_required": False}
+
+def test_signup_hidden_field_makes_no_account(api):
+    body = {"nickname": "봇", "login_id": "botbot01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "website": "http://spam.example"}
+    r = api.post("/api/auth/signup", json=body)
+    assert r.status_code == 400 and r.json()["detail"]["message"]
+    with SessionLocal() as db:
+        assert db.scalar(text("SELECT count(*) FROM users WHERE login_id = 'botbot01'")) == 0
+
+
+def test_mass_signups_are_slowed_per_address_and_overall(api, monkeypatch):
+    from app.config import get_settings
+    from app.routers import auth
+
+    monkeypatch.setattr(get_settings(), "rate_limit_enabled", True)
+    monkeypatch.setattr(auth, "SIGNUP_PER_IP_HOUR", 3)
+    for i in range(3):
+        assert Api().signup(login_id=f"mass{i:02d}").status_code == 201
+    assert Api().signup(login_id="mass99").status_code == 429  # same address (test client)
+    ratelimit.reset()
+    monkeypatch.setattr(auth, "SIGNUP_PER_IP_HOUR", 100)
+    monkeypatch.setattr(auth, "SIGNUP_ALL_HOUR", 2)
+    assert Api().signup(login_id="all01").status_code == 201
+    assert Api().signup(login_id="all02").status_code == 201
+    assert Api().signup(login_id="all03").status_code == 429  # everyone together

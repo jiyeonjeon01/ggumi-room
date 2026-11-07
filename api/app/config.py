@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     # While testing in production: sign-up needs this code (empty = open sign-up).
     # Login and existing accounts are not affected.
-    signup_code: str = ""
     # Friend presence: away after this long without real input; offline this long after the last
     # connection drops (logout is immediate). Shorter values are only for local end-to-end tests.
     presence_away_s: float = 300.0
