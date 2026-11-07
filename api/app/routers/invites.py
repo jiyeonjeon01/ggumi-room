@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
-from ..access import relation
+from ..access import blocked_between, relation
 from ..config import get_settings
 from ..db import get_db, utcnow
 from ..deps import client_ip, current_user
@@ -129,6 +129,8 @@ def accept_invite(token: str, request: Request, user: User = Depends(current_use
             status.HTTP_410_GONE if state in ("expired", "revoked") else status.HTTP_404_NOT_FOUND,
             detail={"status": state, "message": "만료되었거나 더 이상 쓸 수 없는 초대 링크예요."},
         )
+    if owner.id != user.id and blocked_between(db, owner.id, user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"status": "not_found", "message": "만료되었거나 더 이상 쓸 수 없는 초대 링크예요."})
     if owner.id != user.id:
         db.execute(
             insert(RoomGuest)

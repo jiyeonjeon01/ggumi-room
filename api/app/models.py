@@ -24,6 +24,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base, utcnow
 
 THEMES = ("pastel", "galaxy", "plant")
+REPORT_REASONS = ("abuse", "spam", "sexual", "privacy", "other")
+REPORT_CONTEXTS = ("chat", "request", "room", "party", "guestbook", "other")
 
 
 def _id() -> Mapped[uuid.UUID]:
@@ -50,6 +52,9 @@ class User(Base):
     )
     # For a future "change nickname" page (e.g. rate-limit changes).
     nickname_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When they confirmed being 14 or older and agreed to the privacy policy (sign-up). NULL for
+    # accounts made before open sign-up (testers invited by code).
+    terms_agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'disabled')", name="users_status_check"),
@@ -278,3 +283,43 @@ class RoomMember(Base):
     joined_at: Mapped[datetime] = _created()
 
     __table_args__ = (CheckConstraint("role IN ('host', 'member')", name="room_members_role_check"),)
+
+
+class UserBlock(Base):
+    """`blocker` doesn't want anything from `blocked`: no friendship, friend requests, invites or visits."""
+
+    __tablename__ = "user_blocks"
+
+    blocker_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    blocked_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (CheckConstraint("blocker_id <> blocked_id", name="user_blocks_not_self"),)
+
+
+class Report(Base):
+    """A report about another user, for the operator to read (no admin page yet: query the table).
+
+    Kept when either account is deleted (ids set to NULL) with the reported nickname and
+    login id as they were, so a report still means something afterwards.
+    """
+
+    __tablename__ = "reports"
+
+    id: Mapped[uuid.UUID] = _id()
+    reporter_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    target_nickname: Mapped[str] = mapped_column(String(12), nullable=False)
+    target_login_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Where it happened (chat, friend request, room, party...), and what the reporter wrote.
+    context: Mapped[str] = mapped_column(String(16), nullable=False, default="other", server_default="other")
+    detail: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", server_default="open")
+    created_at: Mapped[datetime] = _created()
+
+    __table_args__ = (
+        CheckConstraint(f"reason IN {REPORT_REASONS}", name="reports_reason_check"),
+        CheckConstraint(f"context IN {REPORT_CONTEXTS}", name="reports_context_check"),
+        CheckConstraint("status IN ('open', 'closed')", name="reports_status_check"),
+    )

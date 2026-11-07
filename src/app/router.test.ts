@@ -39,6 +39,7 @@ describe('parse', () => {
     expect(parse(INVITE, '')).toEqual({ name: 'invite', token: INVITE.slice(8) });
     expect(parse('/invite/short', '')).toEqual({ name: 'invite', token: '' });
     expect(parse(PARTY, '')).toEqual({ name: 'party', token: PARTY.slice(7) });
+    expect(parse('/privacy', '')).toEqual({ name: 'privacy' });
     expect(parse('/party/short', '')).toEqual({ name: 'party', token: '' });
     expect(parse('/login', `?next=${encodeURIComponent(INVITE)}`)).toEqual({ name: 'login', next: INVITE });
     expect(parse('/signup', '?next=https://evil.example')).toEqual({ name: 'signup', next: '/' });

@@ -14,10 +14,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import ratelimit
-from ..access import are_friends, lock_pair, pair, room_access
+from ..access import are_friends, blocked_between, lock_pair, pair, room_access
 from ..db import get_db, utcnow
 from ..deps import current_user
-from ..models import FriendRequest, Friendship, Room, User
+from ..models import FriendRequest, Friendship, Room, User, UserBlock
 from ..realtime.hub import hub, notify
 from ..schemas import (
     FriendOut,
@@ -61,6 +61,9 @@ def search(
             func.lower(User.nickname).like(f"%{_like_escape(term.lower())}%", escape="\\"),
             User.id != user.id,
             User.status == "active",
+            # Blocked either way: they don't find each other.
+            User.id.not_in(select(UserBlock.blocked_id).where(UserBlock.blocker_id == user.id)),
+            User.id.not_in(select(UserBlock.blocker_id).where(UserBlock.blocked_id == user.id)),
         )
         # Exact matches first, then the oldest accounts.
         .order_by((func.lower(User.nickname) == term.lower()).desc(), User.created_at)
@@ -157,6 +160,9 @@ def send_request(body: FriendRequestIn, user: User = Depends(current_user), db: 
     if not target or target.status != "active":
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="사용자를 찾을 수 없어요.")
     lock_pair(db, user.id, target_id)
+    if blocked_between(db, user.id, target_id):
+        # Same answer whoever blocked whom, so nobody learns they were blocked.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="이 사용자에게는 친구 요청을 보낼 수 없어요.")
     if are_friends(db, user.id, target_id):
         raise HTTPException(status.HTTP_409_CONFLICT, detail="이미 친구예요.")
 

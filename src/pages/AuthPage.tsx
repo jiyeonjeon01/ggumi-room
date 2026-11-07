@@ -79,6 +79,11 @@ export function LoginPage({ next }: { next: string }) {
             회원가입
           </a>
         </p>
+        <p className="mt-2 text-center text-xs">
+          <a href="/privacy" onClick={(e) => (e.preventDefault(), navigate('/privacy'))} className="text-plum-500 underline underline-offset-2">
+            개인정보처리방침
+          </a>
+        </p>
       </Card>
     </div>
   );
@@ -87,6 +92,7 @@ export function LoginPage({ next }: { next: string }) {
 export function SignupPage({ next }: { next: string }) {
   const { signup } = useAuth();
   const [form, setForm] = useState({ nickname: '', login_id: '', password: '', password_confirm: '', website: '' });
+  const [agree, setAgree] = useState(false);
 
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [serverErr, setServerErr] = useState<{ field?: string; message: string } | null>(null);
@@ -105,6 +111,7 @@ export function SignupPage({ next }: { next: string }) {
     login_id: loginIdError(form.login_id),
     password: passwordError(form.password, form.login_id),
     password_confirm: form.password_confirm === form.password ? null : '비밀번호가 서로 달라요.',
+    agree: agree ? null : '만 14세 이상이고 개인정보처리방침에 동의해야 가입할 수 있어요.',
   };
   const shown = (k: keyof typeof errs) =>
     (serverErr?.field === k ? serverErr.message : null) ?? (touched[k] ? errs[k] : null);
@@ -123,12 +130,12 @@ export function SignupPage({ next }: { next: string }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setTouched({ nickname: true, login_id: true, password: true, password_confirm: true });
+    setTouched({ nickname: true, login_id: true, password: true, password_confirm: true, agree: true });
     if (Object.values(errs).some(Boolean)) return;
     setBusy(true);
     setServerErr(null);
     try {
-      await signup({ ...form, login_id: normalizedId });
+      await signup({ ...form, login_id: normalizedId, agree });
       await finishAuth(next);
     } catch (err) {
       setServerErr(err instanceof ApiError ? err.detail : { message: '가입하지 못했어요.' });
@@ -167,7 +174,24 @@ export function SignupPage({ next }: { next: string }) {
           <Field label="비밀번호 확인" name="new-password-confirm" type="password" autoComplete="new-password" maxLength={128} value={form.password_confirm} onChange={set('password_confirm')} onBlur={blur('password_confirm')} error={shown('password_confirm')} />
           {/* Not for people: off screen, skipped by Tab and screen readers. Scripts that fill every field get no account. */}
           <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={form.website} onChange={set('website')} className="absolute -left-[9999px] h-px w-px opacity-0" />
-          <p className="pb-3 text-xs leading-relaxed text-plum-500">
+          <label className="flex items-start gap-2 rounded-2xl bg-white/70 px-3 py-2.5 text-sm text-plum-700 ring-1 ring-blush-200 pointer-coarse:min-h-10">
+            <input
+              type="checkbox"
+              name="agree"
+              checked={agree}
+              onChange={(e) => (setAgree(e.target.checked), serverErr?.field === 'agree' && setServerErr(null))}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-blush-500"
+            />
+            <span>
+              만 14세 이상이에요. 그리고{' '}
+              <a href="/privacy" target="_blank" rel="noopener" className="text-blush-500 underline underline-offset-2">
+                개인정보처리방침
+              </a>
+              에 동의해요. <span className="text-plum-500">(필수)</span>
+            </span>
+          </label>
+          {shown('agree') && <p role="alert" className="px-1 text-xs text-blush-500">{shown('agree')}</p>}
+          <p className="pb-3 pt-2 text-xs leading-relaxed text-plum-500">
             🔑 꾸미룸은 이메일·전화번호를 받지 않아요. 그래서 <b className="font-normal text-blush-500">비밀번호를 잊으면 되찾기 어려워요</b>. 비밀번호 관리자에 저장해 두세요.
           </p>
           {serverErr && !serverErr.field && <p role="alert" className="pb-2 text-sm text-blush-500">{serverErr.message}</p>}

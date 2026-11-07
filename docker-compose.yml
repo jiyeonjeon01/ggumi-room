@@ -26,6 +26,7 @@ services:
       context: .
       args:
         REQUIRE_FONT: "1" # the font (git-ignored) must be in public/fonts/
+        VITE_PRIVACY_CONTACT: ${VITE_PRIVACY_CONTACT:-} # privacy policy contact (optional)
     image: ggumiroom-web:latest
     restart: unless-stopped
     <<: *hardening

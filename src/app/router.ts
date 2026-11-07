@@ -11,6 +11,7 @@ export type Route =
   | { name: 'party'; token: string }
   | { name: 'login'; next: string }
   | { name: 'signup'; next: string }
+  | { name: 'privacy' }
   | { name: 'notFound' };
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -39,6 +40,7 @@ export function parse(pathname: string, search: string): Route {
   if (party?.[1]) return { name: 'party', token: party[1] };
   if (pathname === '/login') return { name: 'login', next: safeNext(params.get('next')) };
   if (pathname === '/signup') return { name: 'signup', next: safeNext(params.get('next')) };
+  if (pathname === '/privacy') return { name: 'privacy' };
   if (/^\/invite\//.test(pathname)) return { name: 'invite', token: '' }; // malformed token -> "not found" card
   if (/^\/party\//.test(pathname)) return { name: 'party', token: '' };
   return { name: 'notFound' };

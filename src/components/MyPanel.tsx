@@ -20,6 +20,7 @@ export function MyPanel({
   onDecorate,
   onGuestbook,
   onParty,
+  onAccount,
   onNavigate,
 }: {
   me: Me;
@@ -31,6 +32,8 @@ export function MyPanel({
   onGuestbook: () => void;
   /** Opens a party room, or goes to the one I already have open. */
   onParty: () => void;
+  /** Blocked people, privacy policy, deleting the account. */
+  onAccount?: () => void;
   /** Lets a drawer/sheet close itself when leaving the room. */
   onNavigate?: () => void;
 }) {
@@ -90,6 +93,11 @@ export function MyPanel({
             💌 친구 초대하기
           </Button>
           {party}
+          {onAccount && (
+            <Button variant="ghost" className="w-full text-sm" onClick={onAccount}>
+              ⚙️ 계정 관리
+            </Button>
+          )}
         </>
       ) : (
         <>

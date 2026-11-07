@@ -1,6 +1,6 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,9 +18,9 @@ from ..deps import (
     set_session_cookie,
 )
 from ..layout import default_layout
-from ..models import Room, User
+from ..models import Friendship, Room, User, UserSession
 from .rooms import write_items
-from ..schemas import LoginIdCheckOut, LoginIn, MeOut, SignupIn
+from ..schemas import LoginIdCheckOut, LoginIn, MeOut, SignupIn, WithdrawIn
 from ..realtime.hub import hub, notify
 from ..security import hash_password, needs_rehash, token_hash, verify_password
 from ..validation import (
@@ -77,6 +77,8 @@ def signup(body: SignupIn, request: Request, response: Response, db: Session = D
     if body.website:
         # Filled the hidden field: a script, not a person. Same answer as any refusal, no account.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"message": "가입하지 못했어요. 잠시 후 다시 시도해 주세요."})
+    if not body.agree:
+        raise _bad("agree", "만 14세 이상이고 개인정보처리방침에 동의해야 가입할 수 있어요.")
     nickname = normalize_nickname(body.nickname)
     login_id = normalize_login_id(body.login_id)
     if err := nickname_error(nickname):
@@ -89,7 +91,7 @@ def signup(body: SignupIn, request: Request, response: Response, db: Session = D
         raise _bad("password_confirm", "비밀번호가 서로 달라요.")
 
     # User + default room + first session in one transaction.
-    user = User(login_id=login_id, nickname=nickname, password_hash=hash_password(body.password))
+    user = User(login_id=login_id, nickname=nickname, password_hash=hash_password(body.password), terms_agreed_at=utcnow())
     db.add(user)
     try:
         db.flush()
@@ -141,6 +143,28 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)) 
     if token:
         # Realtime connections opened with this session end right away.
         notify(hub.close_sessions, {token_hash(token)})
+
+
+@router.post("/withdraw", status_code=status.HTTP_204_NO_CONTENT)
+def withdraw(body: WithdrawIn, request: Request, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)) -> None:
+    """Deletes the account and everything that belongs to it (rooms, furniture, friends,
+    chats on both sides, guestbook posts, parties, sessions), after the password is confirmed.
+    Reports others filed about this account stay, without the link to it."""
+    ratelimit.hit(f"withdraw:{user.id}", 5, 900)
+    if not verify_password(user.password_hash, body.password):
+        raise _bad("password", "비밀번호가 맞지 않아요.")
+    sessions = set(db.scalars(select(UserSession.token_hash).where(UserSession.user_id == user.id)))
+    friends = [a if b == user.id else b for a, b in db.execute(select(Friendship.user_a_id, Friendship.user_b_id).where(or_(Friendship.user_a_id == user.id, Friendship.user_b_id == user.id)))]
+    rooms = list(db.scalars(select(Room.id).where(Room.owner_id == user.id)))
+    db.execute(delete(User).where(User.id == user.id))  # every table cascades from users
+    db.commit()
+    clear_session_cookie(response)
+    # Their sockets close, anyone in their rooms is let out, friends' lists update.
+    notify(hub.close_sessions, sessions)
+    for room_id in rooms:
+        notify(hub.close_room, room_id)
+    if friends:
+        notify(hub.friends_changed, friends)
 
 
 @router.get("/me", response_model=MeOut)

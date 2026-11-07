@@ -27,6 +27,8 @@ import { isFacingFor, isFurnitureType, LAYOUT_ERROR_TEXT, type Facing, type Layo
 import { DEMO_ROOM, roomFromTemplate, toPlacements, type RoomData } from './game/room/roomData';
 import { finishAuth, LoginPage, SignupPage } from './pages/AuthPage';
 import { InvitePage } from './pages/InvitePage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { AccountModal } from './components/Safety';
 import { Balloons, PartyPage } from './pages/PartyPage';
 
 const THEME_EMOJI: Record<ThemeId, string> = { pastel: '🎀', galaxy: '🪐', plant: '🌿' };
@@ -93,6 +95,12 @@ function Pages() {
       return (
         <Layout>
           <SignupPage next={route.next} />
+        </Layout>
+      );
+    case 'privacy':
+      return (
+        <Layout>
+          <PrivacyPage />
         </Layout>
       );
     default:
@@ -296,6 +304,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
   // Entered through the owner's invite link: offer a friend request once (see inviteArrival).
   const [offer, setOffer] = useState<InviteArrival | null>(null);
   const [guestbookOpen, setGuestbookOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const myId = me?.id;
   useEffect(() => {
     const a = inviteArrival.peek(info.id);
@@ -492,6 +501,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
                 onDecorate={() => (close?.(), startEditing())}
                 onGuestbook={() => (close?.(), setGuestbookOpen(true))}
                 onParty={() => (close?.(), void openParty())}
+                onAccount={() => (close?.(), setAccountOpen(true))}
                 onNavigate={close}
               />
             )
@@ -522,6 +532,7 @@ function ServerRoomScreen({ info, onInfo }: { info: RoomInfo; onInfo: (r: RoomIn
         }
     />
     {guestbookOpen && <GuestbookModal room={info} onClose={() => setGuestbookOpen(false)} onRoom={onInfo} />}
+    {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
     {offer && (
       <FriendOfferModal
         arrival={offer}

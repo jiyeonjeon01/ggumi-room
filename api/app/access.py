@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from .models import FriendRequest, Friendship, Room, RoomGuest, RoomMember, User
+from .models import FriendRequest, Friendship, Room, RoomGuest, RoomMember, User, UserBlock
 
 
 def pair(a: uuid.UUID, b: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
@@ -21,6 +21,17 @@ def lock_pair(db: Session, a: uuid.UUID, b: uuid.UUID) -> None:
     """
     x, y = pair(a, b)
     db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"friend:{x}:{y}", 0))))
+
+
+def blocked_between(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
+    """Either of the two blocked the other."""
+    return db.scalar(
+        select(
+            exists().where(
+                ((UserBlock.blocker_id == a) & (UserBlock.blocked_id == b)) | ((UserBlock.blocker_id == b) & (UserBlock.blocked_id == a))
+            )
+        )
+    ) or False
 
 
 def are_friends(db: Session, a: uuid.UUID, b: uuid.UUID) -> bool:
@@ -62,6 +73,8 @@ def room_access(db: Session, room: Room, viewer: User) -> str | None:
         return "member" if member else None
     if room.owner_id == viewer.id:
         return "owner"
+    if blocked_between(db, room.owner_id, viewer.id):
+        return None  # a block also closes the personal room (friendship and invites are gone)
     if are_friends(db, room.owner_id, viewer.id):
         return "friend"
     guest = db.scalar(select(exists().where(RoomGuest.room_id == room.id, RoomGuest.user_id == viewer.id)))

@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import ratelimit  # noqa: E402
 from app.main import app  # noqa: E402
 
-TABLES = "room_members, guestbook_entries, messages, conversations, room_items, room_guests, room_invitations, friendships, friend_requests, user_sessions, rooms, users"
+TABLES = "reports, user_blocks, room_members, guestbook_entries, messages, conversations, room_items, room_guests, room_invitations, friendships, friend_requests, user_sessions, rooms, users"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -78,7 +78,7 @@ class Api:
     def signup(self, nickname="꾸미", login_id="ggumi01", password="cozy-room-2026", confirm=None):
         return self.post(
             "/api/auth/signup",
-            json={"nickname": nickname, "login_id": login_id, "password": password, "password_confirm": confirm or password},
+            json={"nickname": nickname, "login_id": login_id, "password": password, "password_confirm": confirm or password, "agree": True},
         )
 
 

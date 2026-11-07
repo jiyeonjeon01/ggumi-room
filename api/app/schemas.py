@@ -18,6 +18,29 @@ class SignupIn(BaseModel):
     password_confirm: str = Field(max_length=256)
     # Hidden form field people never see; automated sign-up scripts tend to fill it.
     website: str = Field(default="", max_length=256)
+    # "I'm 14 or older and agree to the privacy policy" (required).
+    agree: bool = False
+
+
+class WithdrawIn(BaseModel):
+    password: str = Field(max_length=256)
+
+
+class BlockIn(BaseModel):
+    user_id: uuid.UUID
+
+
+class BlockedOut(BaseModel):
+    user_id: uuid.UUID
+    nickname: str
+    blocked_at: datetime
+
+
+class ReportIn(BaseModel):
+    user_id: uuid.UUID
+    reason: Literal["abuse", "spam", "sexual", "privacy", "other"]
+    context: Literal["chat", "request", "room", "party", "guestbook", "other"] = "other"
+    detail: str = Field(default="", max_length=300)
 
 
 class LoginIn(BaseModel):

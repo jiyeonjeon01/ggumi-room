@@ -12,7 +12,7 @@ from .db import get_db
 from .deps import csrf_protect
 from .realtime import parties as party_lifecycle
 from .realtime import ws as realtime
-from .routers import auth, friends, guestbook, invites, messages, parties, rooms
+from .routers import auth, friends, guestbook, invites, messages, parties, rooms, safety
 
 settings = get_settings()
 
@@ -45,7 +45,7 @@ def health(db: Session = Depends(get_db)) -> dict:
     return {"status": "ok", "db": "ok"}
 
 
-for r in (auth.router, rooms.router, friends.router, invites.router, messages.router, guestbook.router, parties.router):
+for r in (auth.router, rooms.router, friends.router, invites.router, messages.router, guestbook.router, parties.router, safety.router):
     api.include_router(r)
 app.include_router(api)
 # WebSocket at /ws/live: checks Origin and the session cookie itself (see realtime/ws.py).

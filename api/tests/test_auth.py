@@ -123,7 +123,7 @@ def test_protected_endpoints_require_login():
 
 
 def test_csrf_required_for_unsafe_requests(api):
-    body = {"nickname": "꾸미", "login_id": "ggumi01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026"}
+    body = {"nickname": "꾸미", "login_id": "ggumi01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "agree": True}
     assert api.c.post("/api/auth/signup", json=body).status_code == 403  # no header
     assert api.c.post("/api/auth/signup", json=body, headers={"X-CSRF-Token": "forged-value-123456789"}).status_code == 403
     cross = api.c.post("/api/auth/signup", json=body, headers={"X-CSRF-Token": api.csrf, "Origin": "https://evil.example"})
@@ -160,7 +160,7 @@ def test_open_signup_needs_no_code_and_keeps_logins(api):
     """Sign-up is open: the four fields are enough; an old client's sign-up code is ignored."""
     assert api.signup(login_id="early01").status_code == 201
     guest = Api()
-    body = {"nickname": "테스터", "login_id": "tester01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026"}
+    body = {"nickname": "테스터", "login_id": "tester01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "agree": True}
     assert guest.post("/api/auth/signup", json=body | {"signup_code": "anything"}).status_code == 201
     assert guest.get("/api/auth/signup-config").status_code == 404  # the code switch is gone
     # Existing accounts still log in.
@@ -169,7 +169,7 @@ def test_open_signup_needs_no_code_and_keeps_logins(api):
 
 
 def test_signup_hidden_field_makes_no_account(api):
-    body = {"nickname": "봇", "login_id": "botbot01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "website": "http://spam.example"}
+    body = {"nickname": "봇", "login_id": "botbot01", "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "agree": True, "website": "http://spam.example"}
     r = api.post("/api/auth/signup", json=body)
     assert r.status_code == 400 and r.json()["detail"]["message"]
     with SessionLocal() as db:

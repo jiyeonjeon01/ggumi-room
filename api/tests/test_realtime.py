@@ -34,7 +34,7 @@ class User:
         r = tc.post(
             "/api/auth/signup",
             headers={"x-csrf-token": self.csrf, "cookie": f"ggumi_csrf={self.csrf}"},
-            json={"nickname": nickname, "login_id": login_id, "password": "cozy-room-2026", "password_confirm": "cozy-room-2026"},
+            json={"nickname": nickname, "login_id": login_id, "password": "cozy-room-2026", "password_confirm": "cozy-room-2026", "agree": True},
         )
         assert r.status_code == 201, r.text
         self.session = r.cookies["ggumi_session"]

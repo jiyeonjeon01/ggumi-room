@@ -6,6 +6,7 @@ import { useLive } from '../app/live';
 import type { Presence } from '../net/activity';
 import { navigate } from '../app/router';
 import { joinedLabel } from '../app/rules';
+import { SafetyModal } from './Safety';
 import { Button, useToast } from './ui';
 
 type Tab = 'friends' | 'requests' | 'search';
@@ -28,6 +29,8 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** Someone who sent a friend request, to report or block. */
+  const [safety, setSafety] = useState<{ id: string; nickname: string } | null>(null);
 
   const runSearch = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -123,6 +126,15 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
                   <Button variant="soft" className="px-3 py-1" disabled={busy === r.id} onClick={() => act(r.id, () => api('POST', `/api/friends/requests/${r.id}/decline`), '요청을 거절했어요.')}>
                     거절
                   </Button>
+                  <button
+                    type="button"
+                    onClick={() => setSafety(r.user)}
+                    aria-label={`${r.user.nickname}님 신고·차단`}
+                    title="신고·차단"
+                    className="rounded-full px-1.5 py-1 text-sm hover:bg-blush-100 pointer-coarse:min-h-10 pointer-coarse:min-w-10"
+                  >
+                    <span aria-hidden>🚩</span>
+                  </button>
                 </Row>
               ))}
             </ul>
@@ -180,6 +192,7 @@ export function FriendsPanel({ onNavigate }: { onNavigate?: () => void }) {
           <p className="mt-3 text-xs text-plum-500/80">같은 닉네임이 여럿이면 가입 시기로 구분해 보세요.</p>
         </div>
       )}
+      {safety && <SafetyModal user={safety} context="request" onClose={() => setSafety(null)} onBlocked={() => void run(async () => {})} />}
     </div>
   );
 }

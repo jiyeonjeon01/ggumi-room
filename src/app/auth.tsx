@@ -13,6 +13,8 @@ export interface SignupForm {
   password_confirm: string;
   /** Hidden from people (see SignupPage); scripts that fill every field are turned away. */
   website?: string;
+  /** 14 or older and agrees to the privacy policy (required). */
+  agree: boolean;
 }
 
 interface AuthApi {

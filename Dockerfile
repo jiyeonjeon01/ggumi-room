@@ -22,6 +22,9 @@ RUN if [ -f public/fonts/omyu-pretty.ttf ]; then \
     else \
       echo "WARNING: public/fonts/omyu-pretty.ttf not found - building with fallback fonts"; \
     fi
+# Contact line of the privacy policy (/privacy), from .env; empty points to the in-site report button.
+ARG VITE_PRIVACY_CONTACT=""
+ENV VITE_PRIVACY_CONTACT=$VITE_PRIVACY_CONTACT
 RUN pnpm build
 # Vite copies public/ as is; make sure the served font is still the original.
 RUN if [ -f public/fonts/omyu-pretty.ttf ]; then cmp public/fonts/omyu-pretty.ttf dist/fonts/omyu-pretty.ttf; fi
